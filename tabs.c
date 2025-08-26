@@ -63,8 +63,8 @@ void setup_highlighting_tags(GtkTextBuffer *buffer) {
     gtk_text_buffer_create_tag(buffer, "decorator", "foreground", "#B5CEA8", "style", PANGO_STYLE_ITALIC, NULL);
 }
 
-// Create new tab
-void create_new_tab(const char *filename) {
+// Internal function to create tab (common logic)
+static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
     if (!global_notebook) {
         g_warning("Cannot create tab: notebook not initialized yet");
         return;
@@ -82,7 +82,11 @@ void create_new_tab(const char *filename) {
         }
     }
 
-    hide_panels();
+    // Only hide panels if requested (not from sidebar)
+    if (hide_sidebar) {
+        hide_panels();
+        set_sidebar_visible(FALSE);
+    }
 
     // Create UI elements
     GtkWidget *scrolled_window = gtk_scrolled_window_new();
@@ -151,6 +155,16 @@ void create_new_tab(const char *filename) {
     }
 
     gtk_widget_grab_focus(text_view);
+}
+
+// Create new tab (hides sidebar - for Ctrl+N, file dialogs, etc.)
+void create_new_tab(const char *filename) {
+    create_tab_internal(filename, TRUE);  // Hide sidebar
+}
+
+// Create new tab from sidebar (keeps sidebar open)
+void create_new_tab_from_sidebar(const char *filename) {
+    create_tab_internal(filename, FALSE);  // Keep sidebar open
 }
 
 // Get current tab info

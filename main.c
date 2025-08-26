@@ -18,6 +18,7 @@ TSParser *ts_parser = NULL;
 #endif
 
 // Initialize the main application window and components
+// Initialize the main application window and components
 void initialize_application(GtkApplication *app) {
     if (app_initialized) return;  // Prevent double initialization
 
@@ -32,13 +33,16 @@ void initialize_application(GtkApplication *app) {
     // Initialize recent manager
     recent_manager = gtk_recent_manager_get_default();
 
-    // Create main layout
+    // Create main layout with proper sizing
     GtkWidget *main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_window_set_child(GTK_WINDOW(window), main_paned);
 
-    // Create side panel container
+    // Create side panel container with minimum width
     panel_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(panel_container, 250, -1);  // Set minimum width
     gtk_paned_set_start_child(GTK_PANED(main_paned), panel_container);
+    gtk_paned_set_shrink_start_child(GTK_PANED(main_paned), FALSE);  // Don't allow shrinking
+    gtk_paned_set_resize_start_child(GTK_PANED(main_paned), FALSE);  // Fixed size
 
     // Create side panels
     side_panel = create_file_tree_view();
@@ -50,6 +54,8 @@ void initialize_application(GtkApplication *app) {
     // Create editor area
     GtkWidget *editor_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_paned_set_end_child(GTK_PANED(main_paned), editor_box);
+    gtk_paned_set_shrink_end_child(GTK_PANED(main_paned), FALSE);   // Don't allow shrinking
+    gtk_paned_set_resize_end_child(GTK_PANED(main_paned), TRUE);    // Allow resizing
 
     // Create notebook for tabs
     global_notebook = GTK_NOTEBOOK(gtk_notebook_new());
@@ -58,15 +64,17 @@ void initialize_application(GtkApplication *app) {
     gtk_widget_set_vexpand(GTK_WIDGET(global_notebook), TRUE);
     gtk_box_append(GTK_BOX(editor_box), GTK_WIDGET(global_notebook));
 
-    // Set initial paned position and hide panels
-    gtk_paned_set_position(GTK_PANED(main_paned), 280);
+    // Set initial paned position (300px for sidebar)
+    gtk_paned_set_position(GTK_PANED(main_paned), 300);
+
+    // Initially hide panels (they'll show when user presses Ctrl+B or Ctrl+R)
     gtk_widget_set_visible(panel_container, FALSE);
 
 #ifdef HAVE_TREE_SITTER
     init_tree_sitter();
 #endif
 
-    // Apply dark theme CSS
+    // Apply dark theme CSS with improved sidebar styling
     GtkCssProvider *css_provider = gtk_css_provider_new();
     const char *css_data =
         "textview { "
@@ -82,6 +90,24 @@ void initialize_application(GtkApplication *app) {
         "  min-width: 16px; "
         "  min-height: 16px; "
         "  margin-left: 6px; "
+        "} "
+        "treeview { "
+        "  background-color: #252526; "
+        "  color: #CCCCCC; "
+        "  font-size: 10pt; "
+        "} "
+        "treeview:selected { "
+        "  background-color: #094771; "
+        "} "
+        "listbox { "
+        "  background-color: #252526; "
+        "} "
+        "listbox row { "
+        "  padding: 6px; "
+        "  color: #CCCCCC; "
+        "} "
+        "listbox row:hover { "
+        "  background-color: #2A2D2E; "
         "}";
 
     gtk_css_provider_load_from_string(css_provider, css_data);
@@ -99,6 +125,7 @@ void initialize_application(GtkApplication *app) {
     gtk_window_present(GTK_WINDOW(window));
     g_print("GPad editor initialized successfully.\n");
 }
+
 
 // Main application activation callback
 static void activate(GtkApplication *app, gpointer user_data) {

@@ -73,6 +73,7 @@ void cleanup_resources(void);
 
 // tabs.c
 void create_new_tab(const char *filename);
+void create_new_tab_from_sidebar(const char *filename);  // New function
 TabInfo* get_current_tab_info(void);
 gboolean close_current_tab(void);
 void update_tab_label(TabInfo *tab_info);
@@ -105,5 +106,7 @@ void populate_recent_files(void);
 // actions.c
 void setup_shortcuts(GtkApplication *app);
 void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+gboolean is_sidebar_visible(void);
+void set_sidebar_visible(gboolean visible);
 
 #endif // GPAD_H
