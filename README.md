@@ -2,7 +2,7 @@
 A text editor using C and GTK has Syntax Highlight using Tree-Sitter
 <br>
 
-<img width="1366" height="768" alt="2025-08-11-20-1756101055-scrot" src="https://github.com/user-attachments/assets/efe7bda7-673a-4cad-8bad-eb711e13a821" />
+<img width="1366" height="768" alt="2025-08-19-39-1756303766-scrot" src="https://github.com/user-attachments/assets/23becfa7-1a07-4976-b80a-d5baf37de1dc" />
 
 <br>
-<img width="1366" height="768" alt="2025-08-11-21-1756101062-scrot" src="https://github.com/user-attachments/assets/b4252b0d-9fd9-499c-b257-462a602f494a" />
+<img width="1366" height="768" alt="2025-08-19-39-1756303772-scrot" src="https://github.com/user-attachments/assets/3c60e927-0f9e-467c-a4a7-b71b8cff5c4d" />
