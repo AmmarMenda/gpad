@@ -9,9 +9,44 @@ typedef enum {
 } SidebarType;
 static SidebarType current_sidebar = SIDEBAR_NONE;
 
+// Undo current tab
+void undo_current_tab(void) {
+    TabInfo *tab_info = get_current_tab_info();
+    if (!tab_info || !tab_info->buffer) {
+        g_print("No tab available for undo\n");
+        return;
+    }
+
+    if (gtk_text_buffer_get_can_undo(tab_info->buffer)) {
+        gtk_text_buffer_undo(tab_info->buffer);
+        g_print("Undo performed\n");
+    } else {
+        g_print("Nothing to undo\n");
+    }
+}
+
+// Redo current tab
+void redo_current_tab(void) {
+    TabInfo *tab_info = get_current_tab_info();
+    if (!tab_info || !tab_info->buffer) {
+        g_print("No tab available for redo\n");
+        return;
+    }
+
+    if (gtk_text_buffer_get_can_redo(tab_info->buffer)) {
+        gtk_text_buffer_redo(tab_info->buffer);
+        g_print("Redo performed\n");
+    } else {
+        g_print("Nothing to redo\n");
+    }
+}
+
 // Action callback for menu items and shortcuts
 void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
-    const char *action_name = g_action_get_name(G_ACTION(action));
+    (void)parameter;
+    (void)user_data;
+
+    const char *action_name = action ? g_action_get_name(G_ACTION(action)) : "";
     g_print("Action triggered: %s\n", action_name);
 
     if (strcmp(action_name, "new") == 0) {
@@ -24,16 +59,17 @@ void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_d
         close_current_tab();
     } else if (strcmp(action_name, "quit") == 0) {
         gtk_window_close(GTK_WINDOW(global_window));
+    } else if (strcmp(action_name, "undo") == 0) {
+        undo_current_tab();
+    } else if (strcmp(action_name, "redo") == 0) {
+        redo_current_tab();
     } else if (strcmp(action_name, "recent") == 0) {
         // Toggle recent files panel
         if (sidebar_visible && current_sidebar == SIDEBAR_RECENT_FILES) {
-            // Recent files panel is currently showing, hide it
             hide_panels();
             sidebar_visible = FALSE;
             current_sidebar = SIDEBAR_NONE;
         } else {
-            // Either no sidebar is showing or file browser is showing
-            // Show recent files panel
             show_recent_files_panel();
             sidebar_visible = TRUE;
             current_sidebar = SIDEBAR_RECENT_FILES;
@@ -41,15 +77,11 @@ void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_d
     } else if (strcmp(action_name, "browser") == 0) {
         // Toggle file browser panel
         if (sidebar_visible && current_sidebar == SIDEBAR_FILE_BROWSER) {
-            // File browser is currently showing, hide it
             hide_panels();
             sidebar_visible = FALSE;
             current_sidebar = SIDEBAR_NONE;
         } else {
-            // Either no sidebar is showing or recent files is showing
-            // Show file browser panel
-            const char *home_dir = g_get_home_dir();
-            refresh_file_tree(home_dir);
+            refresh_file_tree_current();
             sidebar_visible = TRUE;
             current_sidebar = SIDEBAR_FILE_BROWSER;
         }
@@ -69,31 +101,33 @@ void set_sidebar_visible(gboolean visible) {
     }
 }
 
-// Get current sidebar type
-SidebarType get_current_sidebar_type(void) {
-    return current_sidebar;
-}
-
 // Setup keyboard shortcuts and actions
 void setup_shortcuts(GtkApplication *app) {
+    // Fixed GActionEntry array with proper field initialization
     const GActionEntry app_entries[] = {
-        {"new", action_callback, NULL, NULL, NULL},
-        {"open", action_callback, NULL, NULL, NULL},
-        {"save", action_callback, NULL, NULL, NULL},
-        {"close", action_callback, NULL, NULL, NULL},
-        {"quit", action_callback, NULL, NULL, NULL},
-        {"recent", action_callback, NULL, NULL, NULL},
-        {"browser", action_callback, NULL, NULL, NULL}
+        {"new", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"open", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"save", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"close", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"quit", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"undo", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"redo", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"recent", action_callback, NULL, NULL, NULL, {0, 0, 0}},
+        {"browser", action_callback, NULL, NULL, NULL, {0, 0, 0}}
     };
 
     g_action_map_add_action_entries(G_ACTION_MAP(app), app_entries, G_N_ELEMENTS(app_entries), app);
 
-    // Set keyboard shortcuts
+    // IMPORTANT: Set keyboard shortcuts at APPLICATION level, not window level
     gtk_application_set_accels_for_action(app, "app.new", (const char*[]){"<Control>n", NULL});
     gtk_application_set_accels_for_action(app, "app.open", (const char*[]){"<Control>o", NULL});
     gtk_application_set_accels_for_action(app, "app.save", (const char*[]){"<Control>s", NULL});
     gtk_application_set_accels_for_action(app, "app.close", (const char*[]){"<Control>w", NULL});
     gtk_application_set_accels_for_action(app, "app.quit", (const char*[]){"<Control>q", NULL});
+    gtk_application_set_accels_for_action(app, "app.undo", (const char*[]){"<Control>z", NULL});
+    gtk_application_set_accels_for_action(app, "app.redo", (const char*[]){"<Control>y", NULL});
     gtk_application_set_accels_for_action(app, "app.recent", (const char*[]){"<Control>r", NULL});
     gtk_application_set_accels_for_action(app, "app.browser", (const char*[]){"<Control>b", NULL});
+
+    g_print("Application shortcuts set up successfully\n");
 }

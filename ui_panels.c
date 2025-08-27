@@ -1,14 +1,17 @@
 #include "gpad.h"
 
 // Recent file item click handler
+// Recent file item click handler
 static void on_recent_file_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data) {
+    (void)box;       // Suppress unused parameter warning
+    (void)user_data; // Suppress unused parameter warning
+
     const char *filename = (const char *)g_object_get_data(G_OBJECT(row), "filename");
     if (filename) {
         // Use the new function that keeps sidebar open
         create_new_tab_from_sidebar(filename);
     }
 }
-
 // Populate recent files list
 void populate_recent_files(void) {
     if (!recent_list_box || !recent_manager) return;

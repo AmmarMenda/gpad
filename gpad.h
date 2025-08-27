@@ -35,10 +35,12 @@ typedef struct {
     gboolean dirty;
     LanguageType lang_type;
     TSTreePtr ts_tree;  // This works regardless of tree-sitter availability
+    void *line_number_data;  // NEW: Line number data for cleanup
 } TabInfo;
 
 // Column enumeration for TreeView
 enum {
+    COLUMN_ICON,
     COLUMN_NAME,
     COLUMN_PATH,
     COLUMN_IS_DIR,
@@ -48,6 +50,8 @@ enum {
 // Global references
 extern GtkWidget *global_window;
 extern GtkNotebook *global_notebook;
+extern GtkWidget *editor_stack;  // Stack to switch between welcome and notebook
+extern GtkWidget *welcome_screen; // Welcome screen widget
 extern GtkTreeView *file_tree_view;
 extern GtkTreeStore *file_tree_store;
 extern GtkWidget *side_panel;
@@ -70,14 +74,25 @@ TSLanguage *tree_sitter_dart(void);
 // main.c
 void initialize_application(GtkApplication *app);
 void cleanup_resources(void);
+void show_welcome_screen(void);
+void show_notebook(void);
+
+// welcome.c
+GtkWidget* create_welcome_screen(void);
+
+// line_numbers.c - NEW
+GtkWidget* create_line_numbers_for_textview(GtkWidget *text_view, TabInfo *tab_info);
+void cleanup_line_numbers(TabInfo *tab_info);
 
 // tabs.c
 void create_new_tab(const char *filename);
-void create_new_tab_from_sidebar(const char *filename);  // New function
+void create_new_tab_from_sidebar(const char *filename);
 TabInfo* get_current_tab_info(void);
 gboolean close_current_tab(void);
 void update_tab_label(TabInfo *tab_info);
 void setup_highlighting_tags(GtkTextBuffer *buffer);
+void on_tab_switched(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data);
+void check_tabs_and_show_welcome(void);
 
 // file_ops.c
 void save_current_tab(void);
@@ -94,6 +109,7 @@ void cleanup_tree_sitter(void);
 // file_browser.c
 GtkWidget* create_file_tree_view(void);
 void refresh_file_tree(const char *directory);
+void refresh_file_tree_current(void);
 void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const char *path);
 
 // ui_panels.c
@@ -108,5 +124,7 @@ void setup_shortcuts(GtkApplication *app);
 void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 gboolean is_sidebar_visible(void);
 void set_sidebar_visible(gboolean visible);
+void undo_current_tab(void);
+void redo_current_tab(void);
 
 #endif // GPAD_H
