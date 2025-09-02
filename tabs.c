@@ -1,95 +1,127 @@
 #include "gpad.h"
+#include <gtksourceview/gtksource.h>
 
-// Forward declarations for static functions used in this file
-static void on_confirm_close_response(GObject *source_object, GAsyncResult *res, gpointer user_data);
+/* ---------------------------
+   Caret-follow + debounce
+   --------------------------- */
 
-// Signal handler for text buffer changes
+static gboolean highlight_timeout_trampoline(gpointer user_data) {
+    TabInfo *tab = (TabInfo*)user_data;
+    if (!tab) return G_SOURCE_REMOVE;
+    /* If Tree-sitter highlighting is still desired, keep this call; otherwise, remove the debounce entirely. */
+    highlight_buffer_sync(tab->buffer, &tab->ts_tree, tab->lang_type); /* safe with GtkSource if using non-overlapping tags [6] */
+    tab->highlight_source_id = 0;
+    return G_SOURCE_REMOVE;
+}
+
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data) {
-    (void)buffer;  // Suppress unused parameter warning
+    (void)buffer;
+    TabInfo *tab = (TabInfo*)user_data;
+    if (!tab) return;
+    if (!tab->dirty) { tab->dirty = TRUE; update_tab_label(tab); } /* GtkTextBuffer dirty UI state [6] */
+    if (tab->highlight_source_id) { g_source_remove(tab->highlight_source_id); tab->highlight_source_id = 0; } /* GLib main loop [7] */
+    /* Optionally schedule Tree‑sitter highlight if used alongside GtkSource */
+    /* tab->highlight_source_id = g_timeout_add(150, highlight_timeout_trampoline, tab); */
+}
 
-    TabInfo *tab_info = (TabInfo*)user_data;
-    if (!tab_info->dirty) {
-        tab_info->dirty = TRUE;
-        update_tab_label(tab_info);
+/* Keep caret in view with a relative alignment when it reaches the top/bottom band */
+static void on_cursor_mark_set(GtkTextBuffer *buffer, GtkTextIter *iter, GtkTextMark *mark, gpointer user_data) {
+    (void)iter;
+    TabInfo *tab = (TabInfo*)user_data;
+    if (!tab || !tab->text_view || !tab->auto_scroll_enabled) return; /* guards [5][8] */
+    if (mark != gtk_text_buffer_get_insert(buffer)) return;            /* only caret moves [6] */
+
+    GtkTextIter cur;
+    gtk_text_buffer_get_iter_at_mark(buffer, &cur, mark);              /* caret iter [6] */
+
+    int ly = 0, lh = 0;
+    gtk_text_view_get_line_yrange(GTK_TEXT_VIEW(tab->text_view), &cur, &ly, &lh); /* per-line metrics [9] */
+
+    GdkRectangle vis = {0};
+    gtk_text_view_get_visible_rect(GTK_TEXT_VIEW(tab->text_view), &vis);          /* visible rect [10] */
+
+    const int scrolloff = 3;
+    int margin = scrolloff * (lh > 0 ? lh : 1);
+    int top_th = vis.y + margin;
+    int bot_th = vis.y + vis.height - margin;
+
+    if (ly < top_th || (ly + lh) > bot_th) {
+        gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->text_view),
+                                     mark,
+                                     tab->auto_scroll_within, TRUE, 0.0, tab->auto_scroll_yalign); /* caret-follow [4] */
     }
-
-    // Use timeout for debounced highlighting (works with or without tree-sitter)
-    static guint source_id = 0;
-    if (source_id > 0) g_source_remove(source_id);
-    source_id = g_timeout_add(150, highlight_timeout_callback, tab_info);
 }
 
-// Tab switching handler - updates file browser when switching tabs
-void on_tab_switched(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data) {
-    (void)notebook; // Suppress unused parameter warning
-    (void)page;     // Suppress unused parameter warning
-    (void)page_num; // Suppress unused parameter warning
-    (void)user_data; // Suppress unused parameter warning
+/* ---------------------------
+   Tab label and tags (tags optional with GtkSource)
+   --------------------------- */
 
-    // If file browser is currently visible, update it to show current tab's directory
-    if (is_sidebar_visible() && gtk_widget_get_visible(side_panel)) {
-        refresh_file_tree_current();
-        g_print("Tab switched - scheduling file browser refresh\n");
-    }
-}
-
-// Tab close button callback
-static void on_tab_close_button_clicked(GtkButton *button, gpointer user_data) {
-    (void)button; // Suppress unused parameter warning
-    (void)user_data; // Suppress unused parameter warning
-    close_current_tab();
-}
-
-// Update tab label to show dirty state
 void update_tab_label(TabInfo *tab_info) {
     if (!global_notebook || !tab_info) return;
-
-    GtkWidget *tab_page = tab_info->scrolled_window;
-    GtkWidget *label_box = gtk_notebook_get_tab_label(global_notebook, tab_page);
+    GtkWidget *page = tab_info->scrolled_window;
+    GtkWidget *label_box = gtk_notebook_get_tab_label(global_notebook, page);
     if (!label_box) return;
-
     GtkWidget *label = gtk_widget_get_first_child(label_box);
     if (!label) return;
 
-    const char *basename = tab_info->filename ? g_path_get_basename(tab_info->filename) : "Untitled";
-    char *markup;
+    char *basename = tab_info->filename ? g_path_get_basename(tab_info->filename) : NULL;
+    const char *display = basename ? basename : "Untitled";
 
-    if (tab_info->dirty) {
-        markup = g_strdup_printf("<i>%s*</i>", basename);
-    } else {
-        markup = g_strdup(basename);
-    }
-
-    gtk_label_set_markup(GTK_LABEL(label), markup);
+    char *markup = tab_info->dirty
+        ? g_strdup_printf("<i>%s*</i>", display)
+        : g_strdup(display);
+    gtk_label_set_markup(GTK_LABEL(label), markup); /* label markup [11] */
     g_free(markup);
-
-    if (tab_info->filename) {
-        g_free((char*)basename);
-    }
+    g_free(basename);
 }
 
-// Setup syntax highlighting tags
 void setup_highlighting_tags(GtkTextBuffer *buffer) {
-    gtk_text_buffer_create_tag(buffer, "comment", "foreground", "#6A9955", "style", PANGO_STYLE_ITALIC, NULL);
-    gtk_text_buffer_create_tag(buffer, "string", "foreground", "#CE9178", NULL);
-    gtk_text_buffer_create_tag(buffer, "preproc", "foreground", "#9B9B9B", NULL);
-    gtk_text_buffer_create_tag(buffer, "keyword", "foreground", "#569CD6", "weight", PANGO_WEIGHT_BOLD, NULL);
-    gtk_text_buffer_create_tag(buffer, "control", "foreground", "#C586C0", "weight", PANGO_WEIGHT_BOLD, NULL);
-    gtk_text_buffer_create_tag(buffer, "type", "foreground", "#4EC9B0", NULL);
-    gtk_text_buffer_create_tag(buffer, "number", "foreground", "#B5CEA8", NULL);
-    gtk_text_buffer_create_tag(buffer, "function", "foreground", "#DCDCAA", NULL);
-    gtk_text_buffer_create_tag(buffer, "constant", "foreground", "#4FC1FF", NULL);
+    /* Keep only if using custom tags in addition to GtkSource; otherwise, can be a no-op. */
+    gtk_text_buffer_create_tag(buffer, "comment",   "foreground", "#6A9955", "style", PANGO_STYLE_ITALIC, NULL);
+    gtk_text_buffer_create_tag(buffer, "string",    "foreground", "#CE9178", NULL);
+    gtk_text_buffer_create_tag(buffer, "preproc",   "foreground", "#9B9B9B", NULL);
+    gtk_text_buffer_create_tag(buffer, "keyword",   "foreground", "#569CD6", "weight", PANGO_WEIGHT_BOLD, NULL);
+    gtk_text_buffer_create_tag(buffer, "control",   "foreground", "#C586C0", "weight", PANGO_WEIGHT_BOLD, NULL);
+    gtk_text_buffer_create_tag(buffer, "type",      "foreground", "#4EC9B0", NULL);
+    gtk_text_buffer_create_tag(buffer, "number",    "foreground", "#B5CEA8", NULL);
+    gtk_text_buffer_create_tag(buffer, "function",  "foreground", "#DCDCAA", NULL);
+    gtk_text_buffer_create_tag(buffer, "constant",  "foreground", "#4FC1FF", NULL);
     gtk_text_buffer_create_tag(buffer, "decorator", "foreground", "#B5CEA8", "style", PANGO_STYLE_ITALIC, NULL);
 }
 
-// Internal function to create tab (common logic) - UPDATED WITH LINE NUMBERS
-// Internal function to create tab (common logic) - FIXED CONTAINER HIERARCHY
+/* ---------------------------
+   Tab switching
+   --------------------------- */
+
+void on_tab_switched(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data) {
+    (void)notebook; (void)page; (void)page_num; (void)user_data;
+
+    if (is_sidebar_visible() && side_panel && gtk_widget_is_visible(side_panel)) {
+        refresh_file_tree_current();
+        g_print("Tab switched - scheduling file browser refresh\n");
+    }
+
+    TabInfo *tab = get_current_tab_info();
+    if (tab && tab->auto_scroll_enabled) {
+        GtkTextMark *insert = gtk_text_buffer_get_insert(tab->buffer); /* caret mark [6] */
+        gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->text_view),
+                                     insert,
+                                     tab->auto_scroll_within, TRUE, 0.0, tab->auto_scroll_yalign); /* align on activation [4] */
+    }
+}
+
+static void on_tab_close_button_clicked(GtkButton *button, gpointer user_data) {
+    (void)button; (void)user_data;
+    close_current_tab();
+}
+
+/* ---------------------------
+   Create a new tab/page (GtkSourceView)
+   --------------------------- */
+
 static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
     g_print("create_tab_internal: filename='%s', hide_sidebar=%s\n",
-            filename ? filename : "NULL",
-            hide_sidebar ? "TRUE" : "FALSE");
-
-    // Make sure notebook is visible when creating a tab
+            filename ? filename : "NULL", hide_sidebar ? "TRUE" : "FALSE");
     show_notebook();
 
     if (!global_notebook) {
@@ -97,13 +129,12 @@ static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
         return;
     }
 
-    // Check if file is already open (only if filename is valid)
-    if (filename && *filename != '\0') {
+    /* Switch to already-open file if present */
+    if (filename && *filename) {
         for (int i = 0; i < gtk_notebook_get_n_pages(global_notebook); ++i) {
-            GtkWidget *page = gtk_notebook_get_nth_page(global_notebook, i);
+            GtkWidget *page = gtk_notebook_get_nth_page(global_notebook, i); /* page by index [12] */
             if (!page) continue;
-
-            TabInfo *info = (TabInfo*)g_object_get_data(G_OBJECT(page), "tab_info");
+            TabInfo *info = (TabInfo*)g_object_get_data(G_OBJECT(page), "tab_info"); /* retrieve TabInfo [13] */
             if (info && info->filename && strcmp(info->filename, filename) == 0) {
                 gtk_notebook_set_current_page(global_notebook, i);
                 g_print("File already open, switching to existing tab\n");
@@ -112,145 +143,146 @@ static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
         }
     }
 
-    // Only hide panels if requested (not from sidebar)
-    if (hide_sidebar) {
-        hide_panels();
-        set_sidebar_visible(FALSE);
-    }
+    if (hide_sidebar) { hide_panels(); set_sidebar_visible(FALSE); } /* UI control [14] */
 
-    // Create UI elements
-    GtkWidget *scrolled_window = gtk_scrolled_window_new();
-    GtkWidget *text_view = gtk_text_view_new();
-    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
+    /* Editor: SourceView inside ScrolledWindow (SourceView is a TextView subclass) */
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    GtkSourceView *sview = GTK_SOURCE_VIEW(gtk_source_view_new());          /* source editor [5] */
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), GTK_WIDGET(sview)); /* direct child [3] */
+    gtk_widget_set_hexpand(scroller, TRUE);
+    gtk_widget_set_vexpand(scroller, TRUE);
 
-    if (!scrolled_window || !text_view || !buffer) {
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(sview));
+    GtkSourceBuffer *sbuf = GTK_SOURCE_BUFFER(buffer);
+
+    if (!scroller || !sview || !buffer) {
         g_error("Failed to create tab UI elements");
         return;
     }
 
-    // Enable undo/redo functionality
-    gtk_text_buffer_set_enable_undo(buffer, TRUE);
-    gtk_text_buffer_set_max_undo_levels(buffer, 100);
+    /* Editor features */
+    gtk_source_view_set_show_line_numbers(sview, TRUE);                    /* built-in gutter [1] */
+    gtk_source_view_set_highlight_current_line(sview, TRUE);               /* QoL highlight [5] */
+    gtk_source_view_set_tab_width(sview, 4);
+    gtk_source_view_set_insert_spaces_instead_of_tabs(sview, TRUE);
 
-    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text_view), TRUE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(sview), TRUE);               /* monospace font [5] */
+    gtk_text_buffer_set_enable_undo(buffer, TRUE);                         /* undo enabled [6] */
+    gtk_text_buffer_set_max_undo_levels(buffer, 100);                      /* bound history [15] */
 
-    // Create tab info structure FIRST (needed for line numbers)
-    TabInfo *tab_info = g_new0(TabInfo, 1);
-    tab_info->scrolled_window = scrolled_window;
-    tab_info->text_view = text_view;
-    tab_info->buffer = buffer;
-    tab_info->filename = (filename && *filename != '\0') ? g_strdup(filename) : NULL;
-    tab_info->dirty = FALSE;
-    tab_info->lang_type = get_language_from_filename(filename);
-    tab_info->ts_tree = NULL;
-    tab_info->line_number_data = NULL;  // Will be set by create_line_numbers_for_textview
+    /* Guess language from filename and enable syntax */
+    GtkSourceLanguageManager *lm = gtk_source_language_manager_get_default(); /* language manager [2] */
+    GtkSourceLanguage *lang = gtk_source_language_manager_guess_language(lm, filename, NULL); /* by filename [2] */
+    if (lang) {
+        gtk_source_buffer_set_language(sbuf, lang);
+        gtk_source_buffer_set_highlight_syntax(sbuf, TRUE);
+    }
 
-    g_print("Created TabInfo: filename='%s'\n", tab_info->filename ? tab_info->filename : "NULL");
+    /* Optional: style scheme (e.g., “oblivion” or any installed scheme id) */
+    GtkSourceStyleSchemeManager *sm = gtk_source_style_scheme_manager_get_default(); /* scheme manager [16] */
+    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, "oblivion");
+    if (scheme) {
+        gtk_source_buffer_set_style_scheme(sbuf, scheme);                  /* apply scheme [17] */
+    }
 
-    // Setup syntax highlighting BEFORE loading content
+    /* TabInfo */
+    TabInfo *tab = g_new0(TabInfo, 1);
+    tab->scrolled_window  = scroller;                                      /* page widget */
+    tab->text_view        = GTK_WIDGET(sview);                              /* editor view */
+    tab->buffer           = buffer;                                         /* text buffer */
+    tab->filename         = (filename && *filename) ? g_strdup(filename) : NULL;
+    tab->dirty            = FALSE;
+    tab->lang_type        = get_language_from_filename(filename);           /* keep existing type map */
+    tab->ts_tree          = NULL;
+
+    tab->auto_scroll_enabled = TRUE;
+    tab->auto_scroll_yalign  = 0.30;
+    tab->auto_scroll_within  = 0.10;
+
+    tab->highlight_source_id    = 0;
+    tab->buffer_changed_handler = 0;
+    tab->cursor_mark_handler    = 0;
+    tab->modified_close_handler = 0;
+
+    /* If also applying custom tags, prepare them; else can be omitted */
     setup_highlighting_tags(buffer);
 
-    // Load file content if filename provided (DO THIS BEFORE CREATING LINE NUMBERS)
-    if (filename && *filename != '\0') {
-        gchar *contents;
-        GError *error = NULL;
-
+    /* Load file content (block 'changed' while setting text to avoid dirty) */
+    if (filename && *filename) {
+        gchar *contents = NULL;
+        GError *err = NULL;
         g_print("Loading file content: %s\n", filename);
+        if (g_file_get_contents(filename, &contents, NULL, &err)) {
+            g_signal_handlers_block_by_func(buffer, G_CALLBACK(on_buffer_changed), tab);
+            gtk_text_buffer_set_text(buffer, contents, -1);                /* irreversible replace [18] */
+            g_signal_handlers_unblock_by_func(buffer, G_CALLBACK(on_buffer_changed), tab);
 
-        if (g_file_get_contents(filename, &contents, NULL, &error)) {
-            // Temporarily disable undo tracking while loading file
-            gtk_text_buffer_begin_irreversible_action(buffer);
-
-            g_signal_handlers_block_by_func(buffer, G_CALLBACK(on_buffer_changed), tab_info);
-            gtk_text_buffer_set_text(buffer, contents, -1);
-            g_signal_handlers_unblock_by_func(buffer, G_CALLBACK(on_buffer_changed), tab_info);
-
-            // Re-enable undo tracking
-            gtk_text_buffer_end_irreversible_action(buffer);
-
-            // Trigger initial highlighting (works with or without tree-sitter)
-            highlight_buffer_sync(buffer, &tab_info->ts_tree, tab_info->lang_type);
+            /* If Tree-sitter overlays are used, call once here; else rely on GtkSource syntax */
+            /* highlight_buffer_sync(buffer, &tab->ts_tree, tab->lang_type); */
 
             add_to_recent_files(filename);
             g_free(contents);
             g_print("Successfully loaded file: %s\n", filename);
         } else {
-            g_warning("Failed to load file %s: %s", filename, error ? error->message : "Unknown error");
-            if (error) g_error_free(error);
+            g_warning("Failed to load file %s: %s", filename, err ? err->message : "Unknown error");
+            if (err) g_error_free(err);
         }
     }
 
-    // NOW create line numbers container (after content is loaded)
-    GtkWidget *editor_container = create_line_numbers_for_textview(text_view, tab_info);
-    if (!editor_container) {
-        g_error("Failed to create line numbers container");
-        g_free(tab_info);
-        return;
-    }
-
-    // Put the editor container (with line numbers) in the scrolled window
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled_window), editor_container);
-
-    // Create tab label with close button
+    /* Tab header with close button */
     GtkWidget *tab_label_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    const char *display_name = (filename && *filename != '\0') ? g_path_get_basename(filename) : "Untitled";
-    GtkWidget *tab_label = gtk_label_new(display_name);
-    GtkWidget *close_button = gtk_button_new_from_icon_name("window-close-symbolic");
-    gtk_button_set_has_frame(GTK_BUTTON(close_button), FALSE);
-
-    // Set minimum sizes to prevent negative calculations
+    char *base = filename && *filename ? g_path_get_basename(filename) : NULL;
+    const char *title = base ? base : "Untitled";
+    GtkWidget *tab_label = gtk_label_new(title);
+    GtkWidget *close_btn = gtk_button_new_from_icon_name("window-close-symbolic");
+    gtk_button_set_has_frame(GTK_BUTTON(close_btn), FALSE);
     gtk_widget_set_size_request(tab_label_box, 60, 24);
     gtk_widget_set_size_request(tab_label, 30, 16);
-    gtk_widget_set_size_request(close_button, 16, 16);
-
+    gtk_widget_set_size_request(close_btn, 16, 16);
     gtk_box_append(GTK_BOX(tab_label_box), tab_label);
-    gtk_box_append(GTK_BOX(tab_label_box), close_button);
+    gtk_box_append(GTK_BOX(tab_label_box), close_btn);
+    g_free(base);
 
-    g_object_set_data_full(G_OBJECT(scrolled_window), "tab_info", tab_info, g_free);
+    /* Store TabInfo on page; free on destroy */
+    g_object_set_data_full(G_OBJECT(scroller), "tab_info", tab, g_free);   /* attach data [19] */
 
-    // Connect signals
-    g_signal_connect(buffer, "changed", G_CALLBACK(on_buffer_changed), tab_info);
-    g_signal_connect(close_button, "clicked", G_CALLBACK(on_tab_close_button_clicked), NULL);
+    /* Connect handlers */
+    tab->buffer_changed_handler = g_signal_connect(buffer, "changed",  G_CALLBACK(on_buffer_changed),  tab); /* dirty + debounce [6] */
+    tab->cursor_mark_handler    = g_signal_connect(buffer, "mark-set", G_CALLBACK(on_cursor_mark_set), tab); /* caret-follow [6] */
+    g_signal_connect(close_btn, "clicked", G_CALLBACK(on_tab_close_button_clicked), NULL);
 
-    // Add to notebook
-    gtk_notebook_append_page(global_notebook, scrolled_window, tab_label_box);
-    gtk_notebook_set_current_page(global_notebook, gtk_notebook_get_n_pages(global_notebook) - 1);
-
-    // Free display_name if it was allocated by g_path_get_basename
-    if (filename && filename != display_name) {
-        g_free((char*)display_name);
-    }
-
-    gtk_widget_grab_focus(text_view);
+    /* Add page and focus editor */
+    gtk_notebook_append_page(global_notebook, scroller, tab_label_box);    /* add page [14] */
+    gtk_notebook_set_current_page(global_notebook, gtk_notebook_get_n_pages(global_notebook) - 1); /* select [14] */
+    gtk_widget_grab_focus(GTK_WIDGET(sview));
     g_print("Tab creation completed successfully\n");
 }
 
-// Create new tab (hides sidebar - for Ctrl+N, file dialogs, etc.)
-void create_new_tab(const char *filename) {
-    create_tab_internal(filename, TRUE);  // Hide sidebar
+void create_new_tab(const char *filename) { create_tab_internal(filename, TRUE); }      /* hide sidebar [14] */
+void create_new_tab_from_sidebar(const char *filename) { create_tab_internal(filename, FALSE); } /* keep sidebar [14] }
+
+/* ---------------------------
+   Save-before-close flow
+   --------------------------- */
+
+static void on_buffer_modified_for_close(GtkTextBuffer *buffer, gpointer user_data) {
+    TabInfo *tab = (TabInfo*)user_data;
+    if (!tab) return;
+    if (!gtk_text_buffer_get_modified(buffer)) {                              /* modified -> FALSE [20] */
+        if (tab->modified_close_handler) {
+            g_signal_handler_disconnect(buffer, tab->modified_close_handler);
+            tab->modified_close_handler = 0;
+        }
+        tab->dirty = FALSE;
+        close_current_tab();
+    }
 }
 
-// Create new tab from sidebar (keeps sidebar open)
-void create_new_tab_from_sidebar(const char *filename) {
-    create_tab_internal(filename, FALSE);  // Keep sidebar open
-}
-
-// Get current tab info
-TabInfo* get_current_tab_info(void) {
-    if (!global_notebook) return NULL;
-
-    gint page_num = gtk_notebook_get_current_page(global_notebook);
-    if (page_num < 0) return NULL;
-
-    GtkWidget *current_page = gtk_notebook_get_nth_page(global_notebook, page_num);
-    return (TabInfo*)g_object_get_data(G_OBJECT(current_page), "tab_info");
-}
-
-// Close confirmation dialog callback - NOW PROPERLY DECLARED
 static void on_confirm_close_response(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     GError *error = NULL;
-    gint choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source_object), res, &error);
-    TabInfo *tab_info = (TabInfo*)user_data;
+    gint choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source_object), res, &error); /* async finish [21] */
+    TabInfo *tab = (TabInfo*)user_data;
+    if (!tab) return;
 
     if (error) {
         g_warning("Alert dialog error: %s", error->message);
@@ -258,54 +290,98 @@ static void on_confirm_close_response(GObject *source_object, GAsyncResult *res,
         return;
     }
 
-    if (choice == 1) { // Save
-        save_current_tab();
-        // After saving, we need to actually close the tab
-        tab_info->dirty = FALSE; // Mark as clean so it closes without asking again
-        close_current_tab();
-    } else if (choice == 2) { // Close without Saving
-        tab_info->dirty = FALSE; // Force close
+    if (choice == 1) { /* Save */
+        if (tab->filename && *tab->filename) {
+            save_current_tab();
+            tab->dirty = FALSE;
+            close_current_tab();
+        } else {
+            save_current_tab(); /* Save As async path */
+            if (!tab->modified_close_handler) {
+                tab->modified_close_handler =
+                    g_signal_connect(tab->buffer, "modified-changed",
+                                     G_CALLBACK(on_buffer_modified_for_close), tab); /* observe clean [20] */
+            }
+        }
+    } else if (choice == 2) { /* Close without Saving */
+        tab->dirty = FALSE;
+        gtk_text_buffer_set_modified(tab->buffer, FALSE);                      /* reflect state [20] */
         close_current_tab();
     }
-    // choice 0 is "Cancel" -> do nothing
+    /* 0 = Cancel -> do nothing */
 }
 
-// Close current tab - SINGLE DEFINITION WITH LINE NUMBER CLEANUP
+/* ---------------------------
+   Close current tab
+   --------------------------- */
+
 gboolean close_current_tab(void) {
-    TabInfo *tab_info = get_current_tab_info();
-    if (!tab_info || !global_notebook) return FALSE;
+    TabInfo *tab = get_current_tab_info();
+    if (!tab || !global_notebook) return FALSE;
 
-    if (tab_info->dirty) {
-        const char *display_name = tab_info->filename ? g_path_get_basename(tab_info->filename) : "Untitled";
-        GtkAlertDialog *dialog = gtk_alert_dialog_new("Save changes to \"%s\" before closing?", display_name);
-        gtk_alert_dialog_set_detail(dialog, "Your changes will be lost if you don't save them.");
-
+    if (tab->dirty) {
+        char *base = tab->filename ? g_path_get_basename(tab->filename) : NULL;
+        const char *shown = base ? base : "Untitled";
+        GtkAlertDialog *dlg = gtk_alert_dialog_new("Save changes to \"%s\" before closing?", shown); /* alert [22] */
+        gtk_alert_dialog_set_detail(dlg, "Your changes will be lost if you don't save them.");
         const char* buttons[] = {"Cancel", "_Save", "Close without Saving", NULL};
-        gtk_alert_dialog_set_buttons(dialog, buttons);
-        gtk_alert_dialog_set_default_button(dialog, 1);
-        gtk_alert_dialog_set_cancel_button(dialog, 0);
-
-        gtk_alert_dialog_choose(dialog, GTK_WINDOW(global_window), NULL, on_confirm_close_response, tab_info);
-
-        if (tab_info->filename && display_name != tab_info->filename) {
-            g_free((char*)display_name);
-        }
+        gtk_alert_dialog_set_buttons(dlg, buttons);
+        gtk_alert_dialog_set_default_button(dlg, 1);
+        gtk_alert_dialog_set_cancel_button(dlg, 0);
+        gtk_alert_dialog_choose(dlg, GTK_WINDOW(global_window), NULL, on_confirm_close_response, tab); /* async choose [23] */
+        g_free(base);
         return TRUE;
     }
 
-    // Cleanup line numbers before closing
-    cleanup_line_numbers(tab_info);
+    /* Cancel debounce */
+    if (tab->highlight_source_id) { g_source_remove(tab->highlight_source_id); tab->highlight_source_id = 0; } /* GLib [7] */
 
-    // Close tab immediately
-    gint page_num = gtk_notebook_get_current_page(global_notebook);
-    gtk_notebook_remove_page(global_notebook, page_num);
+    /* Disconnect handlers */
+    if (tab->buffer && tab->buffer_changed_handler) {
+        g_signal_handler_disconnect(tab->buffer, tab->buffer_changed_handler); tab->buffer_changed_handler = 0; /* [6] */
+    }
+    if (tab->buffer && tab->cursor_mark_handler) {
+        g_signal_handler_disconnect(tab->buffer, tab->cursor_mark_handler);    tab->cursor_mark_handler = 0;    /* [6] */
+    }
+    if (tab->buffer && tab->modified_close_handler) {
+        g_signal_handler_disconnect(tab->buffer, tab->modified_close_handler); tab->modified_close_handler = 0;  /* [20] */
+    }
 
 #ifdef HAVE_TREE_SITTER
-    if (tab_info->ts_tree) {
-        TSTree *actual_tree = (TSTree*)tab_info->ts_tree;
-        ts_tree_delete(actual_tree);
+    if (tab->ts_tree) {
+        TSTree *t = (TSTree*)tab->ts_tree;
+        ts_tree_delete(t);                                                     /* free parse tree [24] */
+        tab->ts_tree = NULL;
     }
 #endif
 
+    /* Remove the page; TabInfo freed via g_object_set_data_full destroy notify */
+    int page = gtk_notebook_get_current_page(global_notebook);                 /* index [25] */
+    gtk_notebook_remove_page(global_notebook, page);                           /* remove [14] */
     return FALSE;
+}
+
+/* ---------------------------
+   Utilities
+   --------------------------- */
+
+TabInfo* get_current_tab_info(void) {
+    if (!global_notebook) return NULL;
+    int idx = gtk_notebook_get_current_page(global_notebook);                  /* -1 if none [25] */
+    if (idx < 0) return NULL;
+    GtkWidget *page = gtk_notebook_get_nth_page(global_notebook, idx);         /* page by index [12] */
+    if (!page) return NULL;
+    return (TabInfo*)g_object_get_data(G_OBJECT(page), "tab_info");            /* TabInfo retrieval [13] */
+}
+
+void set_auto_scroll_enabled_current(gboolean enabled) {
+    TabInfo *tab = get_current_tab_info();
+    if (!tab) return;
+    tab->auto_scroll_enabled = enabled;
+    if (enabled) {
+        GtkTextMark *insert = gtk_text_buffer_get_insert(tab->buffer);         /* caret mark [6] */
+        gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->text_view),
+                                     insert,
+                                     tab->auto_scroll_within, TRUE, 0.0, tab->auto_scroll_yalign); /* align now [4] */
+    }
 }
