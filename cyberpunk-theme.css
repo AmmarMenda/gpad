@@ -1,0 +1,65 @@
+/* Cyberpunk 2077 Inspired Theme for Gpad */
+
+/* --- Global Styles --- */
+window {
+    background-color: #0a0a0a; /* Dark, almost black background */
+}
+
+/* --- Text View --- */
+textview {
+    background-color: #0a0a0a; /* Dark background for the text editor */
+    color: #00ffea; /* Bright cyan text */
+    font-family: 'Hack', 'monospace'; /* Tech-y font */
+}
+
+/* --- Buttons --- */
+button {
+    background-color: #ff00ff; /* Bright magenta buttons */
+    color: #0a0a0a; /* Dark text on buttons */
+    border: 1px solid #00ffea; /* Cyan border */
+    border-radius: 0; /* Sharp corners */
+    font-weight: bold;
+    text-shadow: 0 0 5px #00ffea; /* Neon glow effect */
+}
+
+button:hover {
+    background-color: #00ffea; /* Cyan on hover */
+    color: #0a0a0a;
+    border-color: #ff00ff; /* Magenta border on hover */
+}
+
+/* --- Tabs --- */
+notebook header {
+    background-color: #1a1a1a;
+}
+
+notebook tab {
+    background-color: #1a1a1a;
+    color: #00ffea;
+    border: 1px solid #ff00ff;
+    border-bottom: none;
+}
+
+notebook tab:checked {
+    background-color: #0a0a0a;
+    border-top: 2px solid #00ffea; /* Highlight the active tab */
+}
+
+/* --- Side Panels --- */
+paned, treeview, listbox {
+    background-color: #1a1a1a;
+    color: #00ffea;
+    border: 1px solid #ff00ff;
+}
+
+/* Highlight for selected file (single-click) */
+treeview:selected {
+    background-color: #800080; /* Purple */
+}
+
+/* Highlight for currently opened file */
+.current-file {
+    background-color: #ffffff; /* Gold */
+    color: #0a0a0a; /* Dark text for contrast */
+}
+

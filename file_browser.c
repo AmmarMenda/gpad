@@ -1,459 +1,233 @@
 #include "gpad.h"
+#include <glib/gstdio.h>
+#include <pango/pango.h>
 
-// Suppress deprecation warnings for tree view functions
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+/* File tree columns */
 
-// FORWARD DECLARATION - Fix compilation error
-static void apply_compact_styling_direct(GtkWidget *tree_view);
 
-// Structure for deferred update data
-typedef struct {
-    GtkTreeStore *store;
-    char *directory_path;
-} UpdateData;
+/* Globals (defined here; 'extern' elsewhere) */
+GtkTreeView  *file_tree_view  = NULL;
+GtkTreeStore *file_tree_store = NULL;
 
-// Global flags to prevent issues
-static gboolean refresh_in_progress = FALSE;
-static gboolean file_opening_in_progress = FALSE;
+/* Recursion control for subdirectories */
+#define MAX_RECURSE_DEPTH 2
 
-// Get icon name based on file extension
-static const char* get_file_icon(const char *filename, gboolean is_dir) {
-    if (is_dir) {
-        return "folder";
-    }
+/* Internal helpers */
+static void setup_columns(GtkTreeView *tv);
+static void apply_compact_renderers(GtkTreeViewColumn *col, GtkCellRenderer *text, GtkCellRenderer *icon);
+static gboolean path_is_dir(const char *full);
+static void populate_dir_recursive(GtkTreeStore *store, GtkTreeIter *parent, const char *path, int depth);
+static void rebuild_for_directory(const char *dir_path);
+static void on_row_activated(GtkTreeView *tv, GtkTreePath *tpath, GtkTreeViewColumn *col, gpointer user_data);
 
-    if (!filename) {
-        return "text-x-generic";
-    }
-
-    // Find file extension
-    const char *ext = strrchr(filename, '.');
-    if (!ext) {
-        return "text-x-generic";
-    }
-
-    // Map extensions to icon names
-    if (g_strcmp0(ext, ".c") == 0) return "text-x-csrc";
-    if (g_strcmp0(ext, ".h") == 0) return "text-x-chdr";
-    if (g_strcmp0(ext, ".cpp") == 0) return "text-x-c++src";
-    if (g_strcmp0(ext, ".hpp") == 0) return "text-x-c++hdr";
-    if (g_strcmp0(ext, ".py") == 0) return "text-x-python";
-    if (g_strcmp0(ext, ".dart") == 0) return "application-dart";
-    if (g_strcmp0(ext, ".js") == 0) return "text-javascript";
-    if (g_strcmp0(ext, ".html") == 0) return "text-html";
-    if (g_strcmp0(ext, ".css") == 0) return "text-css";
-    if (g_strcmp0(ext, ".json") == 0) return "application-json";
-    if (g_strcmp0(ext, ".xml") == 0) return "text-xml";
-    if (g_strcmp0(ext, ".md") == 0) return "text-x-markdown";
-    if (g_strcmp0(ext, ".txt") == 0) return "text-plain";
-    if (g_strcmp0(ext, ".pdf") == 0) return "application-pdf";
-    if (g_strcmp0(ext, ".png") == 0) return "image-png";
-    if (g_strcmp0(ext, ".jpg") == 0 || g_strcmp0(ext, ".jpeg") == 0) return "image-jpeg";
-    if (g_strcmp0(ext, ".gif") == 0) return "image-gif";
-    if (g_strcmp0(ext, ".svg") == 0) return "image-svg+xml";
-    if (g_strcmp0(ext, ".zip") == 0) return "application-zip";
-    if (g_strcmp0(ext, ".tar") == 0 || g_strcmp0(ext, ".gz") == 0) return "application-x-archive";
-    if (g_strcmp0(ext, ".exe") == 0) return "application-x-executable";
-    if (g_strcmp0(ext, ".sh") == 0) return "text-x-script";
-    if (g_strcmp0(ext, ".makefile") == 0 || g_strcmp0(ext, ".mk") == 0) return "text-x-makefile";
-
-    // Default icon for unknown types
-    return "text-x-generic";
+/* Renderers for compact sidebar look */
+static void apply_compact_renderers(GtkTreeViewColumn *col, GtkCellRenderer *text, GtkCellRenderer *icon) {
+    g_object_set(text, "xpad", 2, "ypad", 0, "ellipsize", PANGO_ELLIPSIZE_MIDDLE, NULL);
+    PangoFontDescription *fd = pango_font_description_from_string("10pt");
+    g_object_set(text, "font-desc", fd, NULL);
+    pango_font_description_free(fd);
+    gtk_cell_renderer_text_set_fixed_height_from_font(GTK_CELL_RENDERER_TEXT(text), 1);
+    g_object_set(icon, "xpad", 1, "ypad", 0, "icon-size", GTK_ICON_SIZE_NORMAL, NULL);
 }
 
-// Deferred refresh callback - runs safely outside signal handlers
-static gboolean deferred_refresh_callback(gpointer user_data) {
-    UpdateData *data = (UpdateData*)user_data;
-
-    if (!data || !data->store || !data->directory_path) {
-        g_warning("deferred_refresh_callback: Invalid data");
-        refresh_in_progress = FALSE;
-        if (data) {
-            g_free(data->directory_path);
-            g_free(data);
-        }
-        return G_SOURCE_REMOVE;
-    }
-
-    g_print("Performing deferred tree refresh for: %s\n", data->directory_path);
-
-    // Now it's safe to clear and repopulate the tree store
-    gtk_tree_store_clear(data->store);
-    populate_file_tree(data->store, NULL, data->directory_path);
-
-    // Update current directory
-    g_free(current_directory);
-    current_directory = g_strdup(data->directory_path);
-
-    // Cleanup
-    g_free(data->directory_path);
-    g_free(data);
-    refresh_in_progress = FALSE;
-
-    return G_SOURCE_REMOVE;
+/* Highlight (background color) handler for cell renderer */
+static void highlight_cell_data_func(GtkTreeViewColumn *col, GtkCellRenderer *renderer,
+                                     GtkTreeModel *model, GtkTreeIter *iter, gpointer user_data) {
+    gboolean highlight = FALSE;
+    gtk_tree_model_get(model, iter, COLUMN_HIGHLIGHT, &highlight, -1);
+    if (highlight)
+        g_object_set(renderer, "cell-background", "#ffea82", "cell-background-set", TRUE, NULL);
+    else
+        g_object_set(renderer, "cell-background-set", FALSE, NULL);
 }
 
-// Get directory of current tab's file, or home directory if no file
-static char* get_current_tab_directory(void) {
-    TabInfo *tab_info = get_current_tab_info();
-
-    if (tab_info && tab_info->filename) {
-        char *dir = g_path_get_dirname(tab_info->filename);
-        g_print("Current file directory: %s\n", dir);
-        return dir;
-    } else {
-        const char *home_dir = g_get_home_dir();
-        g_print("Using home directory: %s\n", home_dir);
-        return g_strdup(home_dir);
-    }
+/* Set up columns: one icon+text, highlight using cell data function */
+static void setup_columns(GtkTreeView *tv) {
+    GtkTreeViewColumn *col = gtk_tree_view_column_new();
+    gtk_tree_view_column_set_title(col, "Name");
+    GtkCellRenderer *icon = gtk_cell_renderer_pixbuf_new();
+    GtkCellRenderer *text = gtk_cell_renderer_text_new();
+    gtk_tree_view_column_pack_start(col, icon, FALSE);
+    gtk_tree_view_column_add_attribute(col, icon, "icon-name", COLUMN_ICON);
+    gtk_tree_view_column_pack_start(col, text, TRUE);
+    gtk_tree_view_column_add_attribute(col, text, "text", COLUMN_NAME);
+    apply_compact_renderers(col, text, icon);
+    gtk_tree_view_column_set_cell_data_func(col, text, highlight_cell_data_func, NULL, NULL);
+    gtk_tree_view_append_column(tv, col);
+    gtk_tree_view_set_fixed_height_mode(tv, TRUE);
 }
 
-// Schedule a safe tree refresh
-static void schedule_tree_refresh(const char *directory) {
-    if (!directory || refresh_in_progress) {
-        g_print("Refresh already in progress or invalid directory\n");
-        return;
-    }
-
-    UpdateData *data = g_new0(UpdateData, 1);
-    data->store = file_tree_store;
-    data->directory_path = g_strdup(directory);
-
-    refresh_in_progress = TRUE;
-    g_idle_add(deferred_refresh_callback, data);
+/* Directory tester */
+static gboolean path_is_dir(const char *full) {
+    return full && g_file_test(full, G_FILE_TEST_IS_DIR);
 }
 
-// Populate the file tree with icons
-void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const char *path) {
-    if (!store || !path) {
-        g_warning("populate_file_tree: Invalid parameters");
-        return;
-    }
-
-    DIR *dir = opendir(path);
-    if (!dir) {
-        g_warning("populate_file_tree: Cannot open directory: %s", path);
-        return;
-    }
-
-    struct dirent *entry;
-    GPtrArray *dirs = g_ptr_array_new_with_free_func(g_free);
-    GPtrArray *files = g_ptr_array_new_with_free_func(g_free);
-
-    while ((entry = readdir(dir))) {
-        if (entry->d_name[0] == '.') continue;
-
-        char *full_path = g_build_filename(path, entry->d_name, NULL);
-        if (g_file_test(full_path, G_FILE_TEST_IS_DIR)) {
-            g_ptr_array_add(dirs, g_strdup(entry->d_name));
-        } else {
-            g_ptr_array_add(files, g_strdup(entry->d_name));
-        }
-        g_free(full_path);
-    }
-    closedir(dir);
-
-    g_ptr_array_sort(dirs, (GCompareFunc)strcmp);
-    g_ptr_array_sort(files, (GCompareFunc)strcmp);
-
-    // Add directories first
-    for (guint i = 0; i < dirs->len; i++) {
-        GtkTreeIter iter;
-        char *name = (char *)dirs->pdata[i];
-        char *full_path = g_build_filename(path, name, NULL);
-        const char *icon = get_file_icon(name, TRUE);
-
-        gtk_tree_store_append(store, &iter, parent);
-        gtk_tree_store_set(store, &iter,
-                          COLUMN_ICON, icon,
-                          COLUMN_NAME, name,
-                          COLUMN_PATH, full_path,
-                          COLUMN_IS_DIR, TRUE, -1);
-
-        // Add dummy child for lazy loading
-        GtkTreeIter dummy_iter;
-        gtk_tree_store_append(store, &dummy_iter, &iter);
-        g_free(full_path);
-    }
-
-    // Add files
-    for (guint i = 0; i < files->len; i++) {
-        GtkTreeIter iter;
-        char *name = (char *)files->pdata[i];
-        char *full_path = g_build_filename(path, name, NULL);
-        const char *icon = get_file_icon(name, FALSE);
-
-        gtk_tree_store_append(store, &iter, parent);
-        gtk_tree_store_set(store, &iter,
-                          COLUMN_ICON, icon,
-                          COLUMN_NAME, name,
-                          COLUMN_PATH, full_path,
-                          COLUMN_IS_DIR, FALSE, -1);
-        g_free(full_path);
-    }
-
-    g_ptr_array_free(dirs, TRUE);
-    g_ptr_array_free(files, TRUE);
+static const char* icon_name_for(const char *full, gboolean is_dir) {
+    (void)full;
+    return is_dir ? "folder" : "text-x-generic";
 }
 
-// Handle tree row expansion
-static void on_row_expanded(GtkTreeView *tree_view, GtkTreeIter *iter, GtkTreePath *path, gpointer user_data) {
-    (void)user_data;
-    (void)path;
-
-    if (!tree_view || !iter) {
-        return;
+/* Recursively populate tree model */
+static void populate_dir_recursive(GtkTreeStore *store, GtkTreeIter *parent, const char *path, int depth) {
+    if (!path || depth > MAX_RECURSE_DEPTH) return;
+    GError *err = NULL;
+    GDir *dir = g_dir_open(path, 0, &err);
+    if (!dir) { if (err) { g_warning("Open dir '%s' failed: %s", path, err->message); g_error_free(err);} return; }
+    const gchar *name;
+    while ((name = g_dir_read_name(dir)) != NULL) {
+        if (name[0]=='.') continue;
+        char *full = g_build_filename(path, name, NULL);
+        gboolean is_dir = path_is_dir(full);
+        GtkTreeIter it;
+        gtk_tree_store_append(store, &it, parent);
+        gtk_tree_store_set(store, &it,
+            COLUMN_ICON, icon_name_for(full, is_dir),
+            COLUMN_NAME, name,
+            COLUMN_PATH, full,
+            COLUMN_IS_DIR, is_dir,
+            COLUMN_HIGHLIGHT, FALSE,
+            -1);
+        if (is_dir && depth < MAX_RECURSE_DEPTH)
+            populate_dir_recursive(store, &it, full, depth + 1);
+        g_free(full);
     }
-
-    GtkTreeStore *store = GTK_TREE_STORE(gtk_tree_view_get_model(tree_view));
-    if (!store) return;
-
-    GtkTreeModel *model = GTK_TREE_MODEL(store);
-    GtkTreeIter child;
-
-    if (gtk_tree_model_iter_children(model, &child, iter)) {
-        gchar* name;
-        gtk_tree_model_get(model, &child, COLUMN_NAME, &name, -1);
-
-        if (name == NULL) {
-            gtk_tree_store_remove(store, &child);
-            gchar *dir_path;
-            gtk_tree_model_get(model, iter, COLUMN_PATH, &dir_path, -1);
-            if (dir_path) {
-                populate_file_tree(store, iter, dir_path);
-                g_free(dir_path);
-            }
-        }
-        g_free(name);
-    }
+    g_dir_close(dir);
 }
 
-// Row activation handler - double-click to open files
-static void on_row_activated(GtkTreeView *tree_view, GtkTreePath *path, GtkTreeViewColumn *column, gpointer user_data) {
-    (void)tree_view;
-    (void)column;
-    (void)user_data;
+/* Set up root node and populate whole sidebar */
+static void rebuild_for_directory(const char *dir_path) {
+    if (!file_tree_store || !dir_path) return;
+    gtk_tree_store_clear(file_tree_store);
+    GtkTreeIter root;
+    gtk_tree_store_append(file_tree_store, &root, NULL);
+    char *base = g_path_get_basename(dir_path);
+    gtk_tree_store_set(file_tree_store, &root,
+        COLUMN_ICON, "folder",
+        COLUMN_NAME, base,
+        COLUMN_PATH, dir_path,
+        COLUMN_IS_DIR, TRUE,
+        COLUMN_HIGHLIGHT, FALSE,
+        -1);
+    g_free(base);
+    populate_dir_recursive(file_tree_store, &root, dir_path, 1);
+}
 
-    if (file_opening_in_progress) {
-        g_print("File opening already in progress, ignoring activation\n");
-        return;
-    }
-
-    if (!path || !file_tree_store) {
-        g_warning("Invalid path or tree store");
-        return;
-    }
-
-    file_opening_in_progress = TRUE;
-
-    GtkTreeIter iter;
-    if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(file_tree_store), &iter, path)) {
-        g_warning("Could not get iterator for path");
-        file_opening_in_progress = FALSE;
-        return;
-    }
-
-    gchar *file_path = NULL;
+/* Row activation handler: expand/collapse or open file */
+static void on_row_activated(GtkTreeView *tv, GtkTreePath *tpath, GtkTreeViewColumn *col, gpointer user_data) {
+    GtkTreeModel *model = gtk_tree_view_get_model(tv);
+    GtkTreeIter it;
+    if (!gtk_tree_model_get_iter(model, &it, tpath)) return;
+    gchar *path = NULL;
     gboolean is_dir = FALSE;
-
-    gtk_tree_model_get(GTK_TREE_MODEL(file_tree_store), &iter,
-                      COLUMN_PATH, &file_path,
-                      COLUMN_IS_DIR, &is_dir, -1);
-
-    g_print("Row activated: path='%s', is_dir=%s\n",
-            file_path ? file_path : "NULL",
-            is_dir ? "TRUE" : "FALSE");
-
-    // Only open files, not directories
-    if (!is_dir && file_path && *file_path != '\0') {
-        if (g_file_test(file_path, G_FILE_TEST_EXISTS | G_FILE_TEST_IS_REGULAR)) {
-            g_print("Opening SINGLE file: %s\n", file_path);
-            create_new_tab_from_sidebar(file_path);
-        } else {
-            g_warning("File does not exist: %s", file_path);
-        }
+    gtk_tree_model_get(model, &it, COLUMN_PATH, &path, COLUMN_IS_DIR, &is_dir, -1);
+    if (!path) return;
+    if (is_dir) {
+        if (gtk_tree_view_row_expanded(tv, tpath))
+            gtk_tree_view_collapse_row(tv, tpath);
+        else
+            gtk_tree_view_expand_row(tv, tpath, FALSE);
     } else {
-        g_print("Directory or invalid path, not opening\n");
+        create_new_tab_from_sidebar(path); // open file
     }
-
-    g_free(file_path);
-    file_opening_in_progress = FALSE;
+    g_free(path);
 }
 
-// Function to refresh the file tree with current tab's directory
-void refresh_file_tree_current(void) {
-    if (!file_tree_store) {
-        g_warning("refresh_file_tree_current: file_tree_store is NULL");
-        return;
-    }
-
-    char *directory = get_current_tab_directory();
-    if (!directory) {
-        g_warning("refresh_file_tree_current: Could not get current directory");
-        return;
-    }
-
-    schedule_tree_refresh(directory);
-    show_file_browser_panel();
-
-    g_free(directory);
-}
-
-// Function to refresh the file tree with specific directory
-void refresh_file_tree(const char *directory) {
-    if (!file_tree_store) {
-        g_warning("refresh_file_tree: file_tree_store is NULL");
-        return;
-    }
-
-    if (!directory) {
-        g_warning("refresh_file_tree: directory is NULL");
-        return;
-    }
-
-    schedule_tree_refresh(directory);
-    show_file_browser_panel();
-}
-
-// Create the file tree view with ULTRA-COMPACT direct size control
+/* Public API: create the file tree sidebar widget */
 GtkWidget* create_file_tree_view(void) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);  // Minimal spacing
-    gtk_widget_set_margin_start(box, 6);    // Reduced margins
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_start(box, 6);
     gtk_widget_set_margin_end(box, 6);
     gtk_widget_set_margin_top(box, 6);
     gtk_widget_set_margin_bottom(box, 6);
-
-    // Add header
-    GtkWidget *header = gtk_label_new("<b>File Browser</b>");
-    gtk_label_set_use_markup(GTK_LABEL(header), TRUE);
-    gtk_label_set_xalign(GTK_LABEL(header), 0.0);
-    gtk_box_append(GTK_BOX(box), header);
-
-    // Add subtitle with shortcut hint
-    GtkWidget *subtitle = gtk_label_new("<small>Double-click to open files</small>");
-    gtk_label_set_use_markup(GTK_LABEL(subtitle), TRUE);
-    gtk_label_set_xalign(GTK_LABEL(subtitle), 0.0);
-    gtk_widget_set_opacity(subtitle, 0.7);
-    gtk_box_append(GTK_BOX(box), subtitle);
-
-    // Create scrolled window for tree view
-    GtkWidget *scrolled_window = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window),
-                                   GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(scrolled_window, TRUE);
-    gtk_box_append(GTK_BOX(box), scrolled_window);
-
-    // Create tree store with icon column
-    file_tree_store = gtk_tree_store_new(N_COLUMNS, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN);
-    if (!file_tree_store) {
-        g_error("Failed to create file tree store");
-        return box;
-    }
-
+    GtkWidget *hdr = gtk_label_new("Files");
+    gtk_widget_add_css_class(hdr, "heading");
+    gtk_box_append(GTK_BOX(box), hdr);
+    file_tree_store = gtk_tree_store_new(N_COLUMNS,
+        G_TYPE_STRING,   /* icon-name */
+        G_TYPE_STRING,   /* display name */
+        G_TYPE_STRING,   /* full path */
+        G_TYPE_BOOLEAN,  /* is_dir */
+        G_TYPE_BOOLEAN   /* highlight */
+    );
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scroller, TRUE);
+    gtk_widget_set_hexpand(scroller, TRUE);
+    gtk_box_append(GTK_BOX(box), scroller);
     file_tree_view = GTK_TREE_VIEW(gtk_tree_view_new_with_model(GTK_TREE_MODEL(file_tree_store)));
-    if (!file_tree_view) {
-        g_error("Failed to create file tree view");
-        return box;
-    }
-
-    // Configure tree view for maximum compactness
-    gtk_tree_view_set_headers_visible(file_tree_view, FALSE);
-    gtk_tree_view_set_enable_tree_lines(file_tree_view, FALSE);
+    gtk_widget_add_css_class(GTK_WIDGET(file_tree_view), "compact-browser");
     gtk_tree_view_set_show_expanders(file_tree_view, TRUE);
-    gtk_tree_view_set_level_indentation(file_tree_view, 8); // Very small indentation
-
-    // Create ULTRA-SMALL icon renderer
-    GtkCellRenderer *icon_renderer = gtk_cell_renderer_pixbuf_new();
-    g_object_set(icon_renderer,
-                 "width", 14,           // Very small fixed width
-                 "height", 14,          // Very small fixed height
-                 "xpad", 0,             // No horizontal padding
-                 "ypad", 0,             // No vertical padding
-                 "xalign", 0.0,         // Left align
-                 "yalign", 0.5,         // Center vertically
-                 NULL);
-
-    // Create ultra-compact text renderer
-    GtkCellRenderer *text_renderer = gtk_cell_renderer_text_new();
-    g_object_set(text_renderer,
-                 "xpad", 2,             // Minimal horizontal padding
-                 "ypad", 0,             // No vertical padding
-                 "font", "Sans 7",      // Very small font
-                 "height", 16,          // Force very small row height
-                 "yalign", 0.5,         // Center vertically
-                 NULL);
-
-    // Create combined column with MINIMAL spacing
-    GtkTreeViewColumn *column = gtk_tree_view_column_new();
-    gtk_tree_view_column_set_title(column, "Files");
-    gtk_tree_view_column_set_spacing(column, 1);    // Absolute minimal spacing
-    gtk_tree_view_column_set_sizing(column, GTK_TREE_VIEW_COLUMN_FIXED);
-
-    // Pack renderers with minimal space
-    gtk_tree_view_column_pack_start(column, icon_renderer, FALSE);
-    gtk_tree_view_column_add_attribute(column, icon_renderer, "icon-name", COLUMN_ICON);
-
-    gtk_tree_view_column_pack_start(column, text_renderer, TRUE);
-    gtk_tree_view_column_add_attribute(column, text_renderer, "text", COLUMN_NAME);
-
-    // Add column to tree view
-    gtk_tree_view_append_column(file_tree_view, column);
-
-    // Apply ultra-compact styling
-    apply_compact_styling_direct(GTK_WIDGET(file_tree_view));
-
-    // Connect signals
+    gtk_tree_view_set_level_indentation(file_tree_view, 6);
+    gtk_tree_view_set_headers_visible(file_tree_view, FALSE);
+    gtk_tree_view_set_enable_search(file_tree_view, TRUE);
+    gtk_tree_view_set_activate_on_single_click(file_tree_view, TRUE);
+    setup_columns(file_tree_view);
     g_signal_connect(file_tree_view, "row-activated", G_CALLBACK(on_row_activated), NULL);
-    g_signal_connect(file_tree_view, "row-expanded", G_CALLBACK(on_row_expanded), NULL);
-
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled_window), GTK_WIDGET(file_tree_view));
-
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), GTK_WIDGET(file_tree_view));
     return box;
 }
 
-// ULTRA-AGGRESSIVE compact styling function - NOW PROPERLY DECLARED
-// ULTRA-AGGRESSIVE compact styling function - FIXED for GTK4
-static void apply_compact_styling_direct(GtkWidget *tree_view) {
-    GtkCssProvider *provider = gtk_css_provider_new();
-
-    // Ultra-aggressive CSS that forces very small sizes
-    const char *css =
-        "treeview { "
-        "  font-size: 7pt; "
-        "  -GtkTreeView-vertical-separator: 0; "
-        "  -GtkTreeView-horizontal-separator: 0; "
-        "} "
-        "treeview row { "
-        "  min-height: 16px; "
-        "  padding: 0px 2px; "
-        "  margin: 0px; "
-        "} "
-        "treeview cell { "
-        "  padding: 0px 1px; "
-        "  margin: 0px; "
-        "} "
-        "treeview image { "
-        "  min-width: 12px; "
-        "  min-height: 12px; "
-        "  padding: 0px; "
-        "  margin: 1px; "
-        "} "
-        "treeview label { "
-        "  font-size: 7pt; "
-        "  padding: 0px; "
-        "  margin: 0px; "
-        "} ";
-
-    // FIXED: GTK4 uses only 3 arguments - no error parameter, no return value
-    gtk_css_provider_load_from_data(provider, css, -1);
-
-    // Apply with maximum priority to override theme
-    gtk_style_context_add_provider(gtk_widget_get_style_context(tree_view),
-                                   GTK_STYLE_PROVIDER(provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
-
-    g_object_unref(provider);
+/* External API: refresh sidebar to show directory contents */
+void refresh_file_tree(const char *directory) {
+    const char *dir = (directory && *directory) ? directory : g_get_home_dir();
+    rebuild_for_directory(dir);
 }
 
-#pragma GCC diagnostic pop
+/* External API: Show sidebar for current tab's directory */
+void refresh_file_tree_current(void) {
+    TabInfo *tab = get_current_tab_info();
+    if (tab && tab->filename && *tab->filename) {
+        char *d = g_path_get_dirname(tab->filename);
+        rebuild_for_directory(d);
+        g_free(d);
+        return;
+    }
+    const char *dir = (current_directory && *current_directory) ? current_directory : g_get_home_dir();
+    rebuild_for_directory(dir);
+}
+
+/* Populate for custom root (compat) */
+void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const char *path) {
+    populate_dir_recursive(store, parent, path, 1);
+}
+
+/* Highlight logic—set highlight flag for current file in tree */
+static void clear_current_file_highlight(GtkTreeModel *model, GtkTreeIter *iter) {
+    GtkTreeIter child;
+    gboolean has_child = gtk_tree_model_iter_children(model, &child, iter);
+    while (has_child) {
+        gtk_tree_store_set(GTK_TREE_STORE(model), &child, COLUMN_HIGHLIGHT, FALSE, -1);
+        clear_current_file_highlight(model, &child);
+        has_child = gtk_tree_model_iter_next(model, &child);
+    }
+}
+
+static gboolean find_and_highlight_file(GtkTreeModel *model, GtkTreeIter *iter, const char *filepath) {
+    GtkTreeIter child;
+    gboolean has_child = gtk_tree_model_iter_children(model, &child, iter);
+    while (has_child) {
+        gchar *path = NULL;
+        gtk_tree_model_get(model, &child, COLUMN_PATH, &path, -1);
+        if (path && filepath && strcmp(path, filepath) == 0) {
+            gtk_tree_store_set(GTK_TREE_STORE(model), &child, COLUMN_HIGHLIGHT, TRUE, -1);
+            g_free(path);
+            return TRUE;
+        }
+        g_free(path);
+        if (find_and_highlight_file(model, &child, filepath))
+            return TRUE;
+        has_child = gtk_tree_model_iter_next(model, &child);
+    }
+    return FALSE;
+}
+
+void highlight_current_file(const char *filepath) {
+    if (!file_tree_view || !file_tree_store) return;
+    GtkTreeIter iter;
+    gboolean valid = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(file_tree_store), &iter);
+    while (valid) {
+        clear_current_file_highlight(GTK_TREE_MODEL(file_tree_store), &iter);
+        if (find_and_highlight_file(GTK_TREE_MODEL(file_tree_store), &iter, filepath))
+            break;
+        valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(file_tree_store), &iter);
+    }
+}

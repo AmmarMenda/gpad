@@ -5,8 +5,6 @@ GtkWidget *global_window = NULL;
 GtkNotebook *global_notebook = NULL;
 GtkWidget *editor_stack = NULL;
 GtkWidget *welcome_screen = NULL;
-GtkTreeView *file_tree_view = NULL;
-GtkTreeStore *file_tree_store = NULL;
 GtkWidget *side_panel = NULL;
 GtkWidget *recent_panel = NULL;
 GtkWidget *panel_container = NULL;
@@ -233,102 +231,9 @@ void initialize_application(GtkApplication *app) {
     init_tree_sitter();
 #endif
 
-// Apply dark theme CSS with MUCH MORE AGGRESSIVE compact styling
-GtkCssProvider *css_provider = gtk_css_provider_new();
-const char *css_data =
-    "textview { "
-    "  background-color: #1E1E1E; "
-    "  color: #D4D4D4; "
-    "  font-family: 'JetBrains Mono', 'Source Code Pro', 'Consolas', monospace; "
-    "  font-size: 11pt; "
-    "} "
-    "textview.line-numbers { "
-    "  background-color: #2D2D30; "
-    "  color: #858585; "
-    "  padding-right: 8px; "
-    "  padding-left: 4px; "
-    "  border-right: 1px solid #3E3E42; "
-    "  font-size: 10pt; "
-    "} "
-    "notebook { "
-    "  min-height: 30px; "
-    "} "
-    "notebook tab { "
-    "  padding: 8px 12px; "
-    "  min-width: 50px; "
-    "  min-height: 24px; "
-    "} "
-    "notebook tab button { "
-    "  min-width: 16px; "
-    "  min-height: 16px; "
-    "  margin-left: 6px; "
-    "  padding: 2px; "
-    "} "
-    "notebook tab label { "
-    "  min-height: 16px; "
-    "  margin: 0; "
-    "  padding: 0; "
-    "} "
-    "paned { "
-    "  min-width: 100px; "
-    "  min-height: 100px; "
-    "} "
-    "treeview { "
-    "  background-color: #252526; "
-    "  color: #CCCCCC; "
-    "  font-size: 8pt; "              // MUCH smaller font
-    "  min-height: 100px; "
-    "} "
-    "treeview:selected { "
-    "  background-color: #094771; "
-    "} "
-    "treeview.compact-file-browser { "          // AGGRESSIVE compact styling
-    "  font-size: 8pt !important; "            // Force small font
-    "  -gtk-icon-size: 12px; "                 // Force very small icons
-    "} "
-    "treeview.compact-file-browser row { "      // VERY compact rows
-    "  min-height: 18px !important; "          // Force small row height
-    "  padding: 1px 2px !important; "          // Force minimal padding
-    "  margin: 0 !important; "                 // Remove margins
-    "} "
-    "treeview.compact-file-browser cell { "     // VERY compact cells
-    "  padding: 1px 2px !important; "          // Force minimal cell padding
-    "  margin: 0 !important; "                 // Remove cell margins
-    "} "
-    "treeview.compact-file-browser image { "    // Small icons
-    "  min-width: 12px !important; "           // Force small icon width
-    "  min-height: 12px !important; "          // Force small icon height
-    "  padding: 0 !important; "                // Remove icon padding
-    "  margin: 2px !important; "               // Minimal icon margin
-    "} "
-    "treeview.compact-file-browser label { "    // Compact text
-    "  padding: 0 2px !important; "            // Minimal text padding
-    "  margin: 0 !important; "                 // Remove text margins
-    "  font-size: 8pt !important; "            // Force small text
-    "} "
-    "listbox { "
-    "  background-color: #252526; "
-    "  min-height: 50px; "
-    "} "
-    "listbox row { "
-    "  padding: 6px; "
-    "  color: #CCCCCC; "
-    "  min-height: 20px; "
-    "} "
-    "listbox row:hover { "
-    "  background-color: #2A2D2E; "
-    "} "
-    "stack { "
-    "  background-color: #1E1E1E; "
-    "  min-width: 100px; "
-    "  min-height: 100px; "
-    "} "
-    "box { "
-    "  min-height: 0; "
-    "  min-width: 0; "
-    "}";
-
-    gtk_css_provider_load_from_string(css_provider, css_data);
+// Apply custom macOS-like theme
+    GtkCssProvider *css_provider = gtk_css_provider_new();
+gtk_css_provider_load_from_path(css_provider, "cyberpunk-theme.css");
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(),
         GTK_STYLE_PROVIDER(css_provider),

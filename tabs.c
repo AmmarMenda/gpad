@@ -76,17 +76,17 @@ void update_tab_label(TabInfo *tab_info) {
 }
 
 void setup_highlighting_tags(GtkTextBuffer *buffer) {
-    /* Keep only if using custom tags in addition to GtkSource; otherwise, can be a no-op. */
-    gtk_text_buffer_create_tag(buffer, "comment",   "foreground", "#6A9955", "style", PANGO_STYLE_ITALIC, NULL);
-    gtk_text_buffer_create_tag(buffer, "string",    "foreground", "#CE9178", NULL);
-    gtk_text_buffer_create_tag(buffer, "preproc",   "foreground", "#9B9B9B", NULL);
-    gtk_text_buffer_create_tag(buffer, "keyword",   "foreground", "#569CD6", "weight", PANGO_WEIGHT_BOLD, NULL);
-    gtk_text_buffer_create_tag(buffer, "control",   "foreground", "#C586C0", "weight", PANGO_WEIGHT_BOLD, NULL);
-    gtk_text_buffer_create_tag(buffer, "type",      "foreground", "#4EC9B0", NULL);
-    gtk_text_buffer_create_tag(buffer, "number",    "foreground", "#B5CEA8", NULL);
-    gtk_text_buffer_create_tag(buffer, "function",  "foreground", "#DCDCAA", NULL);
-    gtk_text_buffer_create_tag(buffer, "constant",  "foreground", "#4FC1FF", NULL);
-    gtk_text_buffer_create_tag(buffer, "decorator", "foreground", "#B5CEA8", "style", PANGO_STYLE_ITALIC, NULL);
+    // High-contrast color scheme
+    gtk_text_buffer_create_tag(buffer, "comment",   "foreground", "#8E908C", "style", PANGO_STYLE_ITALIC, NULL);
+    gtk_text_buffer_create_tag(buffer, "string",    "foreground", "#2AA198", NULL);
+    gtk_text_buffer_create_tag(buffer, "preproc",   "foreground", "#CB4B16", NULL);
+    gtk_text_buffer_create_tag(buffer, "keyword",   "foreground", "#859900", "weight", PANGO_WEIGHT_BOLD, NULL);
+    gtk_text_buffer_create_tag(buffer, "control",   "foreground", "#B58900", "weight", PANGO_WEIGHT_BOLD, NULL);
+    gtk_text_buffer_create_tag(buffer, "type",      "foreground", "#268BD2", NULL);
+    gtk_text_buffer_create_tag(buffer, "number",    "foreground", "#D33682", NULL);
+    gtk_text_buffer_create_tag(buffer, "function",  "foreground", "#268BD2", "weight", PANGO_WEIGHT_BOLD, NULL);
+    gtk_text_buffer_create_tag(buffer, "constant",  "foreground", "#6C71C4", NULL);
+    gtk_text_buffer_create_tag(buffer, "decorator", "foreground", "#B58900", "style", PANGO_STYLE_ITALIC, NULL);
 }
 
 /* ---------------------------
@@ -96,17 +96,29 @@ void setup_highlighting_tags(GtkTextBuffer *buffer) {
 void on_tab_switched(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data) {
     (void)notebook; (void)page; (void)page_num; (void)user_data;
 
-    if (is_sidebar_visible() && side_panel && gtk_widget_is_visible(side_panel)) {
-        refresh_file_tree_current();
-        g_print("Tab switched - scheduling file browser refresh\n");
+    TabInfo *tab = get_current_tab_info();
+    if (tab && tab->filename) {
+        char *current_file_dir = g_path_get_dirname(tab->filename);
+        if (current_directory && strcmp(current_directory, current_file_dir) != 0) {
+            g_free(current_directory);
+            current_directory = current_file_dir;
+            refresh_file_tree(current_directory);
+        } else if (!current_directory) {
+            current_directory = current_file_dir;
+            refresh_file_tree(current_directory);
+        } else {
+            g_free(current_file_dir);
+        }
+        highlight_current_file(tab->filename);
+    } else if (current_directory) {
+        refresh_file_tree(current_directory);
     }
 
-    TabInfo *tab = get_current_tab_info();
     if (tab && tab->auto_scroll_enabled) {
-        GtkTextMark *insert = gtk_text_buffer_get_insert(tab->buffer); /* caret mark [6] */
+        GtkTextMark *insert = gtk_text_buffer_get_insert(tab->buffer);
         gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->text_view),
                                      insert,
-                                     tab->auto_scroll_within, TRUE, 0.0, tab->auto_scroll_yalign); /* align on activation [4] */
+                                     tab->auto_scroll_within, TRUE, 0.0, tab->auto_scroll_yalign);
     }
 }
 
@@ -165,6 +177,9 @@ static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
     gtk_source_view_set_highlight_current_line(sview, TRUE);               /* QoL highlight [5] */
     gtk_source_view_set_tab_width(sview, 4);
     gtk_source_view_set_insert_spaces_instead_of_tabs(sview, TRUE);
+    gtk_source_view_set_show_right_margin(sview, TRUE);                     /* show guide */                           /* [1] */
+    gtk_source_view_set_right_margin_position(sview, 80);
+    gtk_source_view_set_auto_indent(sview, TRUE);                       /* auto indent */                           /* [11] */
 
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(sview), TRUE);               /* monospace font [5] */
     gtk_text_buffer_set_enable_undo(buffer, TRUE);                         /* undo enabled [6] */
@@ -180,7 +195,7 @@ static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
 
     /* Optional: style scheme (e.g., “oblivion” or any installed scheme id) */
     GtkSourceStyleSchemeManager *sm = gtk_source_style_scheme_manager_get_default(); /* scheme manager [16] */
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, "oblivion");
+    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, "solarized-dark");
     if (scheme) {
         gtk_source_buffer_set_style_scheme(sbuf, scheme);                  /* apply scheme [17] */
     }
