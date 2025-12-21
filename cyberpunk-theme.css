@@ -2,59 +2,54 @@
 
 /* --- Global Styles --- */
 window {
-    background-color: #0a0a0a; /* Dark, almost black background */
-}
-
-/* --- Text View --- */
-textview {
-    background-color: #0a0a0a; /* Dark background for the text editor */
-    color: #00ffea; /* Bright cyan text */
-    font-family: 'Hack', 'monospace'; /* Tech-y font */
+    background-color: #1E1E1E; /* Dark, almost black background */
 }
 
 /* --- Buttons --- */
 button {
-    background-color: #ff00ff; /* Bright magenta buttons */
-    color: #0a0a0a; /* Dark text on buttons */
-    border: 1px solid #00ffea; /* Cyan border */
+    background-color: #FFFF00; /* Bright magenta buttons */
+    color: #101010; /* Dark text on buttons */
+    border: 1px solid #FFFF00; /* Cyan border */
     border-radius: 0; /* Sharp corners */
     font-weight: bold;
     text-shadow: 0 0 5px #00ffea; /* Neon glow effect */
 }
 
 button:hover {
-    background-color: #00ffea; /* Cyan on hover */
-    color: #0a0a0a;
+    background-color: #FFFF00; /* Cyan on hover */
+    color: #101010;
     border-color: #ff00ff; /* Magenta border on hover */
 }
 
 /* --- Tabs --- */
 notebook header {
-    background-color: #1a1a1a;
+    background-color: #1E1E1E;
 }
 
 notebook tab {
-    background-color: #1a1a1a;
-    color: #00ffea;
+    background-color: #1E1E1E;
+    color: #D4D4D4;
+    border: 1px solid #FFFF00;
+}
+
+notebook tab:checked {
+    background-color: #FFFF00;
+    color: #101010;
     border: 1px solid #ff00ff;
     border-bottom: none;
 }
 
-notebook tab:checked {
-    background-color: #0a0a0a;
-    border-top: 2px solid #00ffea; /* Highlight the active tab */
-}
-
 /* --- Side Panels --- */
 paned, treeview, listbox {
-    background-color: #1a1a1a;
-    color: #00ffea;
-    border: 1px solid #ff00ff;
+    background-color: #1E1E1E;
+    color: #D4D4D4;
+    border: 1px solid #FFFF00;
 }
 
 /* Highlight for selected file (single-click) */
 treeview:selected {
-    background-color: #800080; /* Purple */
+    background-color: #FFFF00; /* Purple */
+    color: #101010;
 }
 
 /* Highlight for currently opened file */

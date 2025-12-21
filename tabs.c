@@ -50,6 +50,15 @@ static void on_cursor_mark_set(GtkTextBuffer *buffer, GtkTextIter *iter, GtkText
                                      mark,
                                      tab->auto_scroll_within, TRUE, 0.0, tab->auto_scroll_yalign); /* caret-follow [4] */
     }
+
+    // Update footer with cursor position
+    if (footer_label) {
+        guint line = gtk_text_iter_get_line(&cur) + 1;
+        guint col = gtk_text_iter_get_line_offset(&cur) + 1;
+        char *status = g_strdup_printf("Ln %u, Col %u", line, col);
+        gtk_label_set_text(GTK_LABEL(footer_label), status);
+        g_free(status);
+    }
 }
 
 /* ---------------------------
@@ -112,6 +121,19 @@ void on_tab_switched(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpo
         highlight_current_file(tab->filename);
     } else if (current_directory) {
         refresh_file_tree(current_directory);
+    }
+
+    if (tab && tab->buffer && footer_label) {
+        GtkTextIter cursor_iter;
+        GtkTextMark *insert = gtk_text_buffer_get_insert(tab->buffer);
+        gtk_text_buffer_get_iter_at_mark(tab->buffer, &cursor_iter, insert);
+        guint line = gtk_text_iter_get_line(&cursor_iter) + 1;
+        guint col = gtk_text_iter_get_line_offset(&cursor_iter) + 1;
+        char *status = g_strdup_printf("Ln %u, Col %u", line, col);
+        gtk_label_set_text(GTK_LABEL(footer_label), status);
+        g_free(status);
+    } else if (footer_label) {
+        gtk_label_set_text(GTK_LABEL(footer_label), "");
     }
 
     if (tab && tab->auto_scroll_enabled) {
@@ -195,7 +217,7 @@ static void create_tab_internal(const char *filename, gboolean hide_sidebar) {
 
     /* Optional: style scheme (e.g., “oblivion” or any installed scheme id) */
     GtkSourceStyleSchemeManager *sm = gtk_source_style_scheme_manager_get_default(); /* scheme manager [16] */
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, "solarized-dark");
+    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, "classic");
     if (scheme) {
         gtk_source_buffer_set_style_scheme(sbuf, scheme);                  /* apply scheme [17] */
     }

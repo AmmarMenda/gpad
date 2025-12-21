@@ -1,4 +1,5 @@
 #include "gpad.h"
+#include "search.h"
 
 // Global variable definitions
 GtkWidget *global_window = NULL;
@@ -12,6 +13,9 @@ GtkListBox *recent_list_box = NULL;
 char *current_directory = NULL;
 GtkRecentManager *recent_manager = NULL;
 gboolean app_initialized = FALSE;
+GtkWidget *footer_label = NULL;
+static GtkCssProvider *current_css_provider = NULL;
+static gboolean is_dark_mode = FALSE;
 
 #ifdef HAVE_TREE_SITTER
 TSParser *ts_parser = NULL;
@@ -27,7 +31,7 @@ void show_welcome_screen(void) {
     if (editor_stack && welcome_screen) {
         gtk_stack_set_visible_child(GTK_STACK(editor_stack), welcome_screen);
         // IMPORTANT: Set focus to window to ensure shortcuts work
-        gtk_widget_grab_focus(global_window);
+        gtk_widget_grab_focus(welcome_screen);
         g_print("Showing welcome screen\n");
     }
 }
@@ -65,6 +69,9 @@ static gboolean update_after_tab_close(gpointer user_data) {
         show_welcome_screen();
         hide_panels();
         set_sidebar_visible(FALSE);
+        if (footer_label) {
+            gtk_label_set_text(GTK_LABEL(footer_label), "");
+        }
     } else {
         // Get current active tab and update sidebar to its directory
         gint current_page = gtk_notebook_get_current_page(notebook);
@@ -153,6 +160,49 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
     return FALSE; // Let other handlers process the event
 }
 
+// Theme loading function
+static void load_theme(const char *theme_path) {
+    GdkDisplay *display = gdk_display_get_default();
+    
+    // Remove old provider if exists
+    if (current_css_provider) {
+        gtk_style_context_remove_provider_for_display(
+            display,
+            GTK_STYLE_PROVIDER(current_css_provider)
+        );
+        g_object_unref(current_css_provider);
+        current_css_provider = NULL;
+    }
+
+    if (!theme_path) return;
+
+    // Load new theme
+    current_css_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_path(current_css_provider, theme_path);
+    
+    gtk_style_context_add_provider_for_display(
+        display,
+        GTK_STYLE_PROVIDER(current_css_provider),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+}
+
+// Theme toggle callback
+static void on_theme_toggle_clicked(GtkButton *button, gpointer user_data) {
+    (void)user_data;
+    is_dark_mode = !is_dark_mode;
+    
+    if (is_dark_mode) {
+        load_theme("cyberpunk-theme.css");
+        // Button shows Sun icon (switch to light)
+        gtk_button_set_icon_name(button, "weather-clear-symbolic");
+    } else {
+        load_theme("old-macos-theme.css");
+        // Button shows Moon icon (switch to dark)
+        gtk_button_set_icon_name(button, "weather-clear-night-symbolic");
+    }
+}
+
 // Initialize the main application window and components
 void initialize_application(GtkApplication *app) {
     if (app_initialized) return;
@@ -173,9 +223,15 @@ void initialize_application(GtkApplication *app) {
     // Initialize recent manager
     recent_manager = gtk_recent_manager_get_default();
 
+    // Create vertical box to hold main content and footer
+    GtkWidget *main_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_window_set_child(GTK_WINDOW(window), main_vbox);
+
     // Create main layout with proper sizing
     GtkWidget *main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_window_set_child(GTK_WINDOW(window), main_paned);
+    gtk_box_append(GTK_BOX(main_vbox), main_paned);
+    gtk_widget_set_hexpand(main_paned, TRUE);
+    gtk_widget_set_vexpand(main_paned, TRUE);
 
     // Create side panel container with minimum width
     panel_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -231,15 +287,37 @@ void initialize_application(GtkApplication *app) {
     init_tree_sitter();
 #endif
 
-// Apply custom macOS-like theme
-    GtkCssProvider *css_provider = gtk_css_provider_new();
-gtk_css_provider_load_from_path(css_provider, "cyberpunk-theme.css");
-    gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(css_provider),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
-    g_object_unref(css_provider);
+    // Create search bar (hidden by default)
+    GtkWidget *search_bar = init_search_ui();
+    gtk_box_append(GTK_BOX(main_vbox), search_bar);
+
+    // Create footer
+    GtkWidget *footer_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_size_request(footer_box, -1, 32); // Slightly taller for dropdown
+    gtk_widget_add_css_class(footer_box, "footer"); // For potential styling
+    gtk_box_append(GTK_BOX(main_vbox), footer_box);
+
+    footer_label = gtk_label_new("");
+    gtk_widget_set_margin_start(footer_label, 10);
+    gtk_widget_set_margin_end(footer_label, 10);
+    gtk_widget_set_hexpand(footer_label, TRUE); // Push dropdown to right
+    gtk_widget_set_halign(footer_label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(footer_box), footer_label);
+
+    // Theme toggle button
+    // Start in Light mode -> Show Moon icon (to switch to dark)
+    GtkWidget *theme_btn = gtk_button_new_from_icon_name("weather-clear-night-symbolic");
+    gtk_button_set_has_frame(GTK_BUTTON(theme_btn), FALSE);
+    gtk_widget_set_tooltip_text(theme_btn, "Toggle Dark Mode");
+    gtk_widget_set_margin_end(theme_btn, 5);
+    gtk_widget_set_margin_top(theme_btn, 2);
+    gtk_widget_set_margin_bottom(theme_btn, 2);
+    g_signal_connect(theme_btn, "clicked", G_CALLBACK(on_theme_toggle_clicked), NULL);
+    gtk_box_append(GTK_BOX(footer_box), theme_btn);
+
+    // Apply default theme (Light)
+    load_theme("old-macos-theme.css");
+    is_dark_mode = FALSE;
 
     // Mark app as initialized
     app_initialized = TRUE;

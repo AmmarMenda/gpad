@@ -1,0 +1,109 @@
+/* Old Mac OS (System 7) Inspired Theme for Gpad */
+
+/* --- Global Styles --- */
+window {
+    background-color: #DDDDDD;
+    /* Classic Mac Grey */
+    color: #000000;
+    font-family: "Chicago", "Geneva", sans-serif;
+}
+
+/* --- Buttons --- */
+button {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #000000;
+    border-radius: 2px;
+    box-shadow: 1px 1px 0px #000000;
+    padding: 4px 8px;
+    margin: 2px;
+}
+
+button:hover {
+    background-color: #EEEEEE;
+}
+
+button:active {
+    background-color: #000000;
+    color: #FFFFFF;
+    box-shadow: none;
+    transform: translate(1px, 1px);
+}
+
+/* --- Tabs --- */
+notebook header {
+    background-color: #DDDDDD;
+    border-bottom: 1px solid #000000;
+}
+
+notebook tab {
+    background-color: #CCCCCC;
+    color: #000000;
+    border: 1px solid #000000;
+    border-bottom: none;
+    margin-right: -1px;
+    /* Overlap borders */
+    padding: 4px 8px;
+    border-radius: 3px 3px 0 0;
+}
+
+notebook tab:checked {
+    background-color: #FFFFFF;
+    color: #000000;
+    border-bottom: 1px solid #FFFFFF;
+    /* Merge with content */
+    z-index: 10;
+}
+
+/* --- Side Panels --- */
+paned {
+    margin: 0;
+}
+
+treeview,
+listbox {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #808080;
+    /* Inset look */
+}
+
+/* Highlight for selected file (single-click) */
+treeview:selected {
+    background-color: #000000;
+    color: #FFFFFF;
+}
+
+listbox row:selected {
+    background-color: #000000;
+    color: #FFFFFF;
+}
+
+/* Highlight for currently opened file */
+.current-file {
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+/* --- Text Editor Area --- */
+textview text {
+    background-color: #FFFFFF;
+    color: #000000;
+    font-family: "Monaco", "Courier New", monospace;
+}
+
+scrolledwindow {
+    border: 1px solid #000000;
+}
+
+/* Search Bar */
+.search-bar {
+    background-color: #CCCCCC;
+    border: 1px solid #000000;
+    border-radius: 4px;
+    padding: 2px;
+}
+
+.search-bar entry {
+    min-width: 200px;
+}

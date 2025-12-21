@@ -1,4 +1,5 @@
 #include "gpad.h"
+#include "search.h"
 
 /* Logical state (UI truth uses gtk_widget_is_visible) */
 static gboolean sidebar_visible = FALSE;
@@ -69,6 +70,8 @@ void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_d
             set_sidebar_visible(TRUE);
             current_sidebar = SIDEBAR_FILE_BROWSER;
         }
+    } else if (strcmp(name, "find") == 0) {
+        toggle_search_bar();
     }
 }
 
@@ -84,6 +87,7 @@ void setup_shortcuts(GtkApplication *app) {
         {"redo",   action_callback, NULL, NULL, NULL},
         {"recent", action_callback, NULL, NULL, NULL},
         {"browser",action_callback, NULL, NULL, NULL},
+        {"find",   action_callback, NULL, NULL, NULL},
     };
     g_action_map_add_action_entries(G_ACTION_MAP(app), entries, G_N_ELEMENTS(entries), app);
 
@@ -96,4 +100,5 @@ void setup_shortcuts(GtkApplication *app) {
     gtk_application_set_accels_for_action(app, "app.redo",   (const char*[]){"<primary>y", NULL});
     gtk_application_set_accels_for_action(app, "app.recent", (const char*[]){"<primary>r", NULL});
     gtk_application_set_accels_for_action(app, "app.browser",(const char*[]){"<primary>b", NULL});
+    gtk_application_set_accels_for_action(app, "app.find",   (const char*[]){"<primary>f", NULL});
 }

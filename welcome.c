@@ -11,6 +11,8 @@ GtkWidget* create_welcome_screen(void) {
     gtk_widget_set_margin_bottom(main_box, 40);
     
     // App title
+    gtk_widget_set_focusable(main_box, TRUE);
+    
     GtkWidget *title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(title), 
         "<span size='xx-large' weight='bold'>GPad</span>\n"

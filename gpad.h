@@ -66,6 +66,7 @@ extern GtkWidget        *global_window;
 extern GtkNotebook      *global_notebook;
 extern GtkWidget        *editor_stack;
 extern GtkWidget        *welcome_screen;
+extern GtkWidget        *footer_label;
 extern GtkTreeView      *file_tree_view;
 extern GtkTreeStore     *file_tree_store;
 extern GtkWidget        *side_panel;
