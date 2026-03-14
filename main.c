@@ -5,7 +5,6 @@
 GtkWidget *global_window = NULL;
 GtkNotebook *global_notebook = NULL;
 GtkWidget *editor_stack = NULL;
-GtkWidget *welcome_screen = NULL;
 GtkWidget *side_panel = NULL;
 GtkWidget *recent_panel = NULL;
 GtkWidget *panel_container = NULL;
@@ -27,14 +26,7 @@ static gboolean update_after_tab_close(gpointer user_data);
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
 
 // Show welcome screen
-void show_welcome_screen(void) {
-    if (editor_stack && welcome_screen) {
-        gtk_stack_set_visible_child(GTK_STACK(editor_stack), welcome_screen);
-        // IMPORTANT: Set focus to window to ensure shortcuts work
-        gtk_widget_grab_focus(welcome_screen);
-        g_print("Showing welcome screen\n");
-    }
-}
+
 
 // Show notebook (tabs area)
 void show_notebook(void) {
@@ -66,7 +58,7 @@ static gboolean update_after_tab_close(gpointer user_data) {
     if (num_pages == 0) {
         // No tabs left, show welcome screen and hide sidebar
         g_print("No tabs left - showing welcome screen\n");
-        show_welcome_screen();
+        create_new_tab(NULL);
         hide_panels();
         set_sidebar_visible(FALSE);
         if (footer_label) {
@@ -163,7 +155,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
 // Theme loading function
 static void load_theme(const char *theme_path) {
     GdkDisplay *display = gdk_display_get_default();
-    
+
     // Remove old provider if exists
     if (current_css_provider) {
         gtk_style_context_remove_provider_for_display(
@@ -179,7 +171,7 @@ static void load_theme(const char *theme_path) {
     // Load new theme
     current_css_provider = gtk_css_provider_new();
     gtk_css_provider_load_from_path(current_css_provider, theme_path);
-    
+
     gtk_style_context_add_provider_for_display(
         display,
         GTK_STYLE_PROVIDER(current_css_provider),
@@ -191,7 +183,7 @@ static void load_theme(const char *theme_path) {
 static void on_theme_toggle_clicked(GtkButton *button, gpointer user_data) {
     (void)user_data;
     is_dark_mode = !is_dark_mode;
-    
+
     if (is_dark_mode) {
         load_theme("cyberpunk-theme.css");
         // Button shows Sun icon (switch to light)
@@ -262,8 +254,6 @@ void initialize_application(GtkApplication *app) {
     gtk_box_append(GTK_BOX(editor_box), editor_stack);
 
     // Create welcome screen
-    welcome_screen = create_welcome_screen();
-    gtk_stack_add_named(GTK_STACK(editor_stack), welcome_screen, "welcome");
 
     // Create notebook for tabs
     global_notebook = GTK_NOTEBOOK(gtk_notebook_new());
@@ -281,7 +271,6 @@ void initialize_application(GtkApplication *app) {
 
     // Initially hide panels and show welcome screen
     gtk_widget_set_visible(panel_container, FALSE);
-    show_welcome_screen();
 
 #ifdef HAVE_TREE_SITTER
     init_tree_sitter();
@@ -340,32 +329,35 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
 // Handle command line arguments
 static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdline, gpointer user_data) {
-    (void)user_data; // Suppress unused parameter warning
+    (void)user_data;
 
     gchar **argv;
     gint argc;
     argv = g_application_command_line_get_arguments(cmdline, &argc);
-
     if (!app_initialized) {
         initialize_application(GTK_APPLICATION(app));
     }
-
     gboolean opened_file = FALSE;
     for (int i = 1; i < argc; i++) {
-        if (g_file_test(argv[i], G_FILE_TEST_EXISTS)) {
+        if (g_file_test(argv[i], G_FILE_TEST_IS_REGULAR)) {
             create_new_tab(argv[i]);
             opened_file = TRUE;
             g_print("Opening file from command line: %s\n", argv[i]);
         } else {
-            g_warning("File does not exist: %s", argv[i]);
+            FILE *f = fopen(argv[i], "w");
+            if (f) {
+                fclose(f);
+                g_print("GPad: Created and opening new file '%s'\n", argv[i]);
+                create_new_tab(argv[i]);
+                opened_file = TRUE;
+            } else {
+                g_printerr("GPad: Permission denied or invalid path for '%s'\n", argv[i]);
+            }
         }
     }
-
-    // If no files were opened, make sure welcome screen is visible
     if (!opened_file) {
-        show_welcome_screen();
+        create_new_tab(NULL);
     }
-
     g_strfreev(argv);
     if (global_window) {
         gtk_window_present(GTK_WINDOW(global_window));

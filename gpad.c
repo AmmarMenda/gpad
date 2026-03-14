@@ -936,7 +936,20 @@ static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdl
             create_new_tab(argv[i]);
             g_print("Opening file from command line: %s\n", argv[i]);
         } else {
-            g_warning("File does not exist: %s", argv[i]);
+            g_print("File doesn't exist");
+            FILE *f = fopen(argv[i], "w");
+        }
+        if (f) {
+                    fclose(f); // Create it and immediately let go
+                    g_print("GPad: Created new file '%s'\n", argv[i]);
+
+                    // Now that it physically exists, open the tab
+                    create_new_tab(argv[i]);
+                } else {
+                    // This only happens if the path is invalid or permissions are denied
+                    g_printerr("GPad: Permission denied or invalid path for '%s'\n", argv[i]);
+                }
+            }
         }
     }
 
@@ -979,7 +992,7 @@ int main(int argc, char **argv) {
     setup_shortcuts(app);
 
     // Run application
-    int status = g_application_run(G_APPLICATION(app), argc, argv);
+    int status = g_application_run(G_APPLICATION(app), argc, argv)
 
     // Cleanup
     cleanup_resources();
