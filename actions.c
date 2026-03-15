@@ -1,18 +1,24 @@
 #include "gpad.h"
 #include "search.h"
 
-/* Logical state (UI truth uses gtk_widget_is_visible) */
+ 
 static gboolean sidebar_visible = FALSE;
 typedef enum { SIDEBAR_NONE = 0, SIDEBAR_FILE_BROWSER, SIDEBAR_RECENT_FILES } SidebarType;
 static SidebarType current_sidebar = SIDEBAR_NONE;
 
-/* Undo/Redo */
+ 
+/**
+ * Performs an undo operation on the current active tab's text buffer.
+ */
 void undo_current_tab(void) {
     TabInfo *t = get_current_tab_info();
     if (!t || !t->buffer) { g_print("No tab for undo\n"); return; }
     if (gtk_text_buffer_get_can_undo(t->buffer)) gtk_text_buffer_undo(t->buffer);
     else g_print("Nothing to undo\n");
 }
+/**
+ * Performs a redo operation on the current active tab's text buffer.
+ */
 void redo_current_tab(void) {
     TabInfo *t = get_current_tab_info();
     if (!t || !t->buffer) { g_print("No tab for redo\n"); return; }
@@ -20,18 +26,28 @@ void redo_current_tab(void) {
     else g_print("Nothing to redo\n");
 }
 
-/* Effective visibility for the whole sidebar container */
+ 
+/**
+ * Checks if the sidebar panel container is currently visible.
+ */
 gboolean is_sidebar_visible(void) {
     return panel_container && gtk_widget_is_visible(panel_container);
 }
 
-/* Keep logical flag in sync; reset current type when hiding */
+ 
+/**
+ * Sets the visibility state of the sidebar.
+ */
 void set_sidebar_visible(gboolean visible) {
     sidebar_visible = visible;
     if (!visible) current_sidebar = SIDEBAR_NONE;
 }
 
-/* Actions */
+ 
+/**
+ * Generic callback for application actions (new, open, save, etc.).
+ * Dispatches to the appropriate function based on the action name.
+ */
 void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     (void)parameter; (void)user_data;
     const char *name = action ? g_action_get_name(G_ACTION(action)) : "";
@@ -75,7 +91,10 @@ void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_d
     }
 }
 
-/* Register actions and accelerators */
+ 
+/**
+ * Registers application actions and sets up global keyboard shortcuts.
+ */
 void setup_shortcuts(GtkApplication *app) {
     const GActionEntry entries[] = {
         {"new",    action_callback, NULL, NULL, NULL},

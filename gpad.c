@@ -5,12 +5,12 @@
 #include <string.h>
 #include <stdlib.h>
 
-// Make tree-sitter optional to avoid linking issues
+ 
 #ifdef HAVE_TREE_SITTER
 #include <tree_sitter/api.h>
 #endif
 
-// Enum for supported languages
+ 
 typedef enum {
     LANG_C,
     LANG_PYTHON,
@@ -18,7 +18,7 @@ typedef enum {
     LANG_UNKNOWN
 } LanguageType;
 
-// Data structure to hold information for each tab
+ 
 typedef struct {
     GtkWidget *scrolled_window;
     GtkWidget *text_view;
@@ -31,7 +31,7 @@ typedef struct {
 #endif
 } TabInfo;
 
-// Column enumeration for TreeView
+ 
 enum {
     COLUMN_NAME,
     COLUMN_PATH,
@@ -39,7 +39,7 @@ enum {
     N_COLUMNS
 };
 
-// Global references
+ 
 static GtkWidget *global_window = NULL;
 static GtkNotebook *global_notebook = NULL;
 static GtkTreeView *file_tree_view = NULL;
@@ -55,13 +55,13 @@ static gboolean app_initialized = FALSE;
 #ifdef HAVE_TREE_SITTER
 static TSParser *ts_parser = NULL;
 
-// Forward declarations for grammar parsers
+ 
 TSLanguage *tree_sitter_c(void);
 TSLanguage *tree_sitter_python(void);
 TSLanguage *tree_sitter_dart(void);
 #endif
 
-// Forward declarations for local functions
+ 
 static void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const char *path);
 static void show_recent_files_panel(void);
 static void hide_panels(void);
@@ -80,7 +80,10 @@ static void highlight_buffer_sync(GtkTextBuffer *buffer, TSTree **ts_tree, Langu
 static void apply_tags_recursive(TSNode node, GtkTextBuffer *buffer, const char *source_code, LanguageType lang);
 #endif
 
-// Add file to recent manager
+ 
+/**
+ * Adds a file to the recent files list.
+ */
 static void add_to_recent_files(const char *filename) {
     if (!recent_manager || !filename || !g_path_is_absolute(filename)) return;
 
@@ -91,7 +94,10 @@ static void add_to_recent_files(const char *filename) {
     }
 }
 
-// Get language type based on filename
+ 
+/**
+ * Detects language based on file extension.
+ */
 static LanguageType get_language_from_filename(const char *filename) {
     if (!filename) return LANG_UNKNOWN;
 
@@ -107,7 +113,10 @@ static LanguageType get_language_from_filename(const char *filename) {
     return LANG_UNKNOWN;
 }
 
-// Show file browser panel
+ 
+/**
+ * Switches the sidebar to show the file browser.
+ */
 static void show_file_browser_panel(void) {
     if (!panel_container || !side_panel) return;
 
@@ -116,7 +125,10 @@ static void show_file_browser_panel(void) {
     gtk_widget_set_visible(panel_container, TRUE);
 }
 
-// Show recent files panel
+ 
+/**
+ * Switches the sidebar to show the recent files list.
+ */
 static void show_recent_files_panel(void) {
     if (!panel_container || !recent_panel) return;
 
@@ -126,14 +138,20 @@ static void show_recent_files_panel(void) {
     gtk_widget_set_visible(panel_container, TRUE);
 }
 
-// Hide all side panels
+ 
+/**
+ * Hides all sidebar panels.
+ */
 static void hide_panels(void) {
     if (panel_container) {
         gtk_widget_set_visible(panel_container, FALSE);
     }
 }
 
-// Update tab label to show dirty state
+ 
+/**
+ * Updates the tab label with the filename and modified status.
+ */
 static void update_tab_label(TabInfo *tab_info) {
     if (!global_notebook || !tab_info) return;
 
@@ -161,7 +179,10 @@ static void update_tab_label(TabInfo *tab_info) {
     }
 }
 
-// Setup syntax highlighting tags
+ 
+/**
+ * Sets up text tags for syntax highlighting in the given buffer.
+ */
 static void setup_highlighting_tags(GtkTextBuffer *buffer) {
     gtk_text_buffer_create_tag(buffer, "comment", "foreground", "#6A9955", "style", PANGO_STYLE_ITALIC, NULL);
     gtk_text_buffer_create_tag(buffer, "string", "foreground", "#CE9178", NULL);
@@ -176,14 +197,17 @@ static void setup_highlighting_tags(GtkTextBuffer *buffer) {
 }
 
 #ifdef HAVE_TREE_SITTER
-// Recursive function to traverse the syntax tree and apply tags
+ 
+/**
+ * Recursively applies syntax highlighting tags based on tree-sitter nodes.
+ */
 static void apply_tags_recursive(TSNode node, GtkTextBuffer *buffer, const char *source_code, LanguageType lang) {
     if (ts_node_is_null(node)) return;
 
     const char *type = ts_node_type(node);
     const char *tag_name = NULL;
 
-    // Language-specific syntax highlighting
+     
     if (lang == LANG_C) {
         if (strcmp(type, "comment") == 0) tag_name = "comment";
         else if (strcmp(type, "string_literal") == 0 || strcmp(type, "char_literal") == 0) tag_name = "string";
@@ -228,13 +252,16 @@ static void apply_tags_recursive(TSNode node, GtkTextBuffer *buffer, const char 
         gtk_text_buffer_apply_tag_by_name(buffer, tag_name, &start_iter, &end_iter);
     }
 
-    // Recursively process children
+     
     for (uint32_t i = 0; i < ts_node_child_count(node); ++i) {
         apply_tags_recursive(ts_node_child(node, i), buffer, source_code, lang);
     }
 }
 
-// Main function to trigger highlighting
+ 
+/**
+ * Synchronously highlights the entire buffer using tree-sitter.
+ */
 static void highlight_buffer_sync(GtkTextBuffer *buffer, TSTree **ts_tree, LanguageType lang) {
     if (lang == LANG_UNKNOWN || !ts_parser) return;
 
@@ -245,10 +272,10 @@ static void highlight_buffer_sync(GtkTextBuffer *buffer, TSTree **ts_tree, Langu
 
     char *text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
-    // Remove existing tags
+     
     gtk_text_buffer_remove_all_tags(buffer, &start, &end);
 
-    // Set language for parser
+     
     TSLanguage *ts_lang = NULL;
     if (lang == LANG_C) ts_lang = tree_sitter_c();
     else if (lang == LANG_PYTHON) ts_lang = tree_sitter_python();
@@ -269,7 +296,10 @@ static void highlight_buffer_sync(GtkTextBuffer *buffer, TSTree **ts_tree, Langu
     g_free(text);
 }
 
-// Timeout callback for debounced highlighting
+ 
+/**
+ * Timeout callback for deferred syntax highlighting.
+ */
 static gboolean highlight_timeout_callback(gpointer user_data) {
     TabInfo *tab_info = (TabInfo*)user_data;
     highlight_buffer_sync(tab_info->buffer, &tab_info->ts_tree, tab_info->lang_type);
@@ -277,7 +307,10 @@ static gboolean highlight_timeout_callback(gpointer user_data) {
 }
 #endif
 
-// Signal handler for text buffer changes
+ 
+/**
+ * Signal handler called when a text buffer is modified.
+ */
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data) {
     TabInfo *tab_info = (TabInfo*)user_data;
 
@@ -293,7 +326,10 @@ static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data) {
 #endif
 }
 
-// Recent file item click handler
+ 
+/**
+ * Callback for when a recent file is selected from the list.
+ */
 static void on_recent_file_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data) {
     const char *filename = (const char *)g_object_get_data(G_OBJECT(row), "filename");
     if (filename) {
@@ -301,11 +337,14 @@ static void on_recent_file_activated(GtkListBox *box, GtkListBoxRow *row, gpoint
     }
 }
 
-// Populate recent files list
+ 
+/**
+ * Fills the recent files list box with items from the recent manager.
+ */
 static void populate_recent_files(void) {
     if (!recent_list_box || !recent_manager) return;
 
-    // Clear existing items
+     
     GtkWidget *child;
     while ((child = gtk_widget_get_first_child(GTK_WIDGET(recent_list_box))) != NULL) {
         gtk_list_box_remove(recent_list_box, child);
@@ -344,7 +383,10 @@ static void populate_recent_files(void) {
     }
 }
 
-// Create recent files panel
+ 
+/**
+ * Creates the recent files sidebar panel.
+ */
 static GtkWidget* create_recent_files_panel(void) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
 
@@ -364,11 +406,14 @@ static GtkWidget* create_recent_files_panel(void) {
     return box;
 }
 
-// Suppress deprecation warnings for tree view functions
+ 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-// Populate the file tree
+ 
+/**
+ * Populates a tree store with the filesystem hierarchy starting from path.
+ */
 static void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const char *path) {
     DIR *dir = opendir(path);
     if (!dir) return;
@@ -393,7 +438,7 @@ static void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const c
     g_ptr_array_sort(dirs, (GCompareFunc)strcmp);
     g_ptr_array_sort(files, (GCompareFunc)strcmp);
 
-    // Add directories first
+     
     for (guint i = 0; i < dirs->len; i++) {
         GtkTreeIter iter;
         char *name = (char *)dirs->pdata[i];
@@ -405,14 +450,14 @@ static void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const c
                           COLUMN_PATH, full_path,
                           COLUMN_IS_DIR, TRUE, -1);
 
-        // Add dummy child for lazy loading
+         
         GtkTreeIter dummy_iter;
         gtk_tree_store_append(store, &dummy_iter, &iter);
 
         g_free(full_path);
     }
 
-    // Add files
+     
     for (guint i = 0; i < files->len; i++) {
         GtkTreeIter iter;
         char *name = (char *)files->pdata[i];
@@ -431,7 +476,10 @@ static void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const c
     g_ptr_array_free(files, TRUE);
 }
 
-// Handle tree row expansion
+ 
+/**
+ * Signal handler for expanding a row in the file tree.
+ */
 static void on_row_expanded(GtkTreeView *tree_view, GtkTreeIter *iter, GtkTreePath *path, gpointer user_data) {
     GtkTreeStore *store = GTK_TREE_STORE(gtk_tree_view_get_model(tree_view));
     GtkTreeModel *model = GTK_TREE_MODEL(store);
@@ -452,7 +500,10 @@ static void on_row_expanded(GtkTreeView *tree_view, GtkTreeIter *iter, GtkTreePa
     }
 }
 
-// Handle file selection in tree
+ 
+/**
+ * Signal handler for selecting a file in the file tree.
+ */
 static void on_file_selected(GtkTreeSelection *selection, gpointer user_data) {
     GtkTreeIter iter;
     GtkTreeModel *model;
@@ -471,7 +522,10 @@ static void on_file_selected(GtkTreeSelection *selection, gpointer user_data) {
     }
 }
 
-// Function to refresh the file tree
+ 
+/**
+ * Refreshes the file tree for a new directory.
+ */
 static void refresh_file_tree(const char *directory) {
     if (!file_tree_store || !directory) return;
 
@@ -484,7 +538,10 @@ static void refresh_file_tree(const char *directory) {
     show_file_browser_panel();
 }
 
-// Create the file tree view
+ 
+/**
+ * Creates the file browser sidebar panel.
+ */
 static GtkWidget* create_file_tree_view() {
     GtkWidget *scrolled_window;
 
@@ -508,12 +565,18 @@ static GtkWidget* create_file_tree_view() {
 
 #pragma GCC diagnostic pop
 
-// Tab close button callback
+ 
+/**
+ * Callback for the close button on a tab.
+ */
 static void on_tab_close_button_clicked(GtkButton *button, gpointer user_data) {
     close_current_tab();
 }
 
-// Save tab content to file
+ 
+/**
+ * Internal helper to save a tab's content.
+ */
 static void save_tab_content(TabInfo *tab_info) {
     if (!tab_info->filename) return;
 
@@ -537,7 +600,10 @@ static void save_tab_content(TabInfo *tab_info) {
     }
 }
 
-// Save as dialog finish callback
+ 
+/**
+ * Finish callback for save dialog in gpad.c.
+ */
 static void save_as_finish(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     TabInfo *tab_info = (TabInfo*)user_data;
     GError *error = NULL;
@@ -557,7 +623,10 @@ static void save_as_finish(GObject *source_object, GAsyncResult *res, gpointer u
     }
 }
 
-// Save current tab
+ 
+/**
+ * Saves the current tab in gpad.c.
+ */
 static void save_current_tab(void) {
     TabInfo *tab_info = get_current_tab_info();
     if (!tab_info) return;
@@ -572,7 +641,10 @@ static void save_current_tab(void) {
     }
 }
 
-// Open file dialog finish callback
+ 
+/**
+ * Finish callback for open dialog in gpad.c.
+ */
 static void open_finish(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     GError *error = NULL;
 
@@ -588,7 +660,10 @@ static void open_finish(GObject *source_object, GAsyncResult *res, gpointer user
     }
 }
 
-// Open file dialog
+ 
+/**
+ * Opens a file dialog in gpad.c.
+ */
 static void open_file_dialog(void) {
     GtkFileDialog *dialog = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dialog, "Open File");
@@ -596,15 +671,18 @@ static void open_file_dialog(void) {
     g_object_unref(dialog);
 }
 
-// Create new tab
+ 
+/**
+ * Creates a new editor tab, optionally loading a file.
+ */
 void create_new_tab(const char *filename) {
-    // Safety check: Don't create tabs before the notebook is initialized
+     
     if (!global_notebook) {
         g_warning("Cannot create tab: notebook not initialized yet");
         return;
     }
 
-    // Check if file is already open
+     
     if (filename) {
         for (int i = 0; i < gtk_notebook_get_n_pages(global_notebook); ++i) {
             GtkWidget *page = gtk_notebook_get_nth_page(global_notebook, i);
@@ -618,7 +696,7 @@ void create_new_tab(const char *filename) {
 
     hide_panels();
 
-    // Create UI elements
+     
     GtkWidget *scrolled_window = gtk_scrolled_window_new();
     GtkWidget *text_view = gtk_text_view_new();
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
@@ -626,7 +704,7 @@ void create_new_tab(const char *filename) {
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text_view), TRUE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled_window), text_view);
 
-    // Create tab label with close button
+     
     GtkWidget *tab_label_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     const char *display_name = filename ? g_path_get_basename(filename) : "Untitled";
     GtkWidget *tab_label = gtk_label_new(display_name);
@@ -636,7 +714,7 @@ void create_new_tab(const char *filename) {
     gtk_box_append(GTK_BOX(tab_label_box), tab_label);
     gtk_box_append(GTK_BOX(tab_label_box), close_button);
 
-    // Create tab info structure
+     
     TabInfo *tab_info = g_new0(TabInfo, 1);
     tab_info->scrolled_window = scrolled_window;
     tab_info->text_view = text_view;
@@ -650,18 +728,18 @@ void create_new_tab(const char *filename) {
 
     g_object_set_data_full(G_OBJECT(scrolled_window), "tab_info", tab_info, g_free);
 
-    // Connect signals
+     
     g_signal_connect(buffer, "changed", G_CALLBACK(on_buffer_changed), tab_info);
     g_signal_connect(close_button, "clicked", G_CALLBACK(on_tab_close_button_clicked), NULL);
 
-    // Add to notebook
+     
     gtk_notebook_append_page(global_notebook, scrolled_window, tab_label_box);
     gtk_notebook_set_current_page(global_notebook, gtk_notebook_get_n_pages(global_notebook) - 1);
 
-    // Setup syntax highlighting
+     
     setup_highlighting_tags(buffer);
 
-    // Load file content if filename provided
+     
     if (filename) {
         gchar *contents;
         GError *error = NULL;
@@ -691,7 +769,10 @@ void create_new_tab(const char *filename) {
     gtk_widget_grab_focus(text_view);
 }
 
-// Get current tab info
+ 
+/**
+ * Retrieves the TabInfo for the currently active tab.
+ */
 TabInfo* get_current_tab_info() {
     if (!global_notebook) return NULL;
 
@@ -702,7 +783,10 @@ TabInfo* get_current_tab_info() {
     return (TabInfo*)g_object_get_data(G_OBJECT(current_page), "tab_info");
 }
 
-// Close confirmation dialog callback
+ 
+/**
+ * Response handler for the unsaved changes alert dialog.
+ */
 static void on_confirm_close_response(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     GError *error = NULL;
     gint choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source_object), res, &error);
@@ -714,17 +798,20 @@ static void on_confirm_close_response(GObject *source_object, GAsyncResult *res,
         return;
     }
 
-    if (choice == 1) { // Save
+    if (choice == 1) {  
         save_current_tab();
-        // Close will happen after save
-    } else if (choice == 2) { // Close without Saving
-        tab_info->dirty = FALSE; // Force close
+         
+    } else if (choice == 2) {  
+        tab_info->dirty = FALSE;  
         close_current_tab();
     }
-    // choice 0 is "Cancel" -> do nothing
+     
 }
 
-// Close current tab
+ 
+/**
+ * Attempts to close the current tab, prompting if there are unsaved changes.
+ */
 gboolean close_current_tab(void) {
     TabInfo *tab_info = get_current_tab_info();
     if (!tab_info || !global_notebook) return FALSE;
@@ -748,18 +835,18 @@ gboolean close_current_tab(void) {
         return TRUE;
     }
 
-    // Close tab immediately
+     
     gint page_num = gtk_notebook_get_current_page(global_notebook);
     gtk_notebook_remove_page(global_notebook, page_num);
 
-    // Cleanup will happen in the tab_info destructor via g_object_set_data_full
+     
 #ifdef HAVE_TREE_SITTER
     if (tab_info->ts_tree) {
         ts_tree_delete(tab_info->ts_tree);
     }
 #endif
 
-    // Create new empty tab if no tabs left
+     
     if (gtk_notebook_get_n_pages(global_notebook) == 0) {
         create_new_tab(NULL);
     }
@@ -767,7 +854,10 @@ gboolean close_current_tab(void) {
     return FALSE;
 }
 
-// Action callback for menu items and shortcuts
+ 
+/**
+ * Action callback in gpad.c.
+ */
 static void action_callback(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const char *action_name = g_action_get_name(G_ACTION(action));
 
@@ -791,7 +881,10 @@ static void action_callback(GSimpleAction *action, GVariant *parameter, gpointer
     }
 }
 
-// Setup keyboard shortcuts and actions
+ 
+/**
+ * Sets up global keyboard shortcuts for the application.
+ */
 static void setup_shortcuts(GtkApplication *app) {
     const GActionEntry app_entries[] = {
         {"new", action_callback, NULL, NULL, NULL},
@@ -805,7 +898,7 @@ static void setup_shortcuts(GtkApplication *app) {
 
     g_action_map_add_action_entries(G_ACTION_MAP(app), app_entries, G_N_ELEMENTS(app_entries), app);
 
-    // Set keyboard shortcuts
+     
     gtk_application_set_accels_for_action(app, "app.new", (const char*[]){"<Control>n", NULL});
     gtk_application_set_accels_for_action(app, "app.open", (const char*[]){"<Control>o", NULL});
     gtk_application_set_accels_for_action(app, "app.save", (const char*[]){"<Control>s", NULL});
@@ -815,60 +908,63 @@ static void setup_shortcuts(GtkApplication *app) {
     gtk_application_set_accels_for_action(app, "app.browser", (const char*[]){"<Control>b", NULL});
 }
 
-// FIXED: Centralized initialization function
+ 
+/**
+ * Main application initialization logic.
+ */
 static void initialize_application(GtkApplication *app) {
-    if (app_initialized) return;  // Prevent double initialization
+    if (app_initialized) return;   
 
     g_print("Initializing GPad editor...\n");
 
-    // Create main window
+     
     GtkWidget *window = gtk_application_window_new(app);
     global_window = window;
     gtk_window_set_title(GTK_WINDOW(window), "GPad - Multi-Tab Editor");
     gtk_window_set_default_size(GTK_WINDOW(window), 1200, 800);
 
-    // Initialize recent manager
+     
     recent_manager = gtk_recent_manager_get_default();
 
-    // Create main layout
+     
     GtkWidget *main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_window_set_child(GTK_WINDOW(window), main_paned);
 
-    // Create side panel container
+     
     panel_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_paned_set_start_child(GTK_PANED(main_paned), panel_container);
 
-    // Create side panels
+     
     side_panel = create_file_tree_view();
     gtk_box_append(GTK_BOX(panel_container), side_panel);
 
     recent_panel = create_recent_files_panel();
     gtk_box_append(GTK_BOX(panel_container), recent_panel);
 
-    // Create editor area
+     
     GtkWidget *editor_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_paned_set_end_child(GTK_PANED(main_paned), editor_box);
 
-    // Create notebook for tabs
+     
     global_notebook = GTK_NOTEBOOK(gtk_notebook_new());
     gtk_notebook_set_scrollable(global_notebook, TRUE);
     gtk_widget_set_hexpand(GTK_WIDGET(global_notebook), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(global_notebook), TRUE);
     gtk_box_append(GTK_BOX(editor_box), GTK_WIDGET(global_notebook));
 
-    // Set initial paned position and hide panels
+     
     gtk_paned_set_position(GTK_PANED(main_paned), 280);
     gtk_widget_set_visible(panel_container, FALSE);
 
 #ifdef HAVE_TREE_SITTER
-    // Initialize tree-sitter parser
+     
     ts_parser = ts_parser_new();
     if (!ts_parser) {
         g_warning("Failed to create tree-sitter parser. Syntax highlighting disabled.");
     }
 #endif
 
-    // Apply dark theme CSS
+     
     GtkCssProvider *css_provider = gtk_css_provider_new();
     const char *css_data =
         "textview { "
@@ -895,20 +991,23 @@ static void initialize_application(GtkApplication *app) {
     );
     g_object_unref(css_provider);
 
-    // Mark app as initialized
+     
     app_initialized = TRUE;
 
-    // Show window
+     
     gtk_window_present(GTK_WINDOW(window));
     g_print("GPad editor initialized successfully.\n");
 }
 
-// Main application activation callback
+ 
+/**
+ * Signal handler for application activation.
+ */
 static void activate(GtkApplication *app, gpointer user_data) {
-    // Initialize the application first
+     
     initialize_application(app);
 
-    // Create initial tab
+     
     const char *filename = (const char *)user_data;
     if (filename && g_file_test(filename, G_FILE_TEST_EXISTS)) {
         create_new_tab(filename);
@@ -917,20 +1016,23 @@ static void activate(GtkApplication *app, gpointer user_data) {
     }
 }
 
-// FIXED: Handle command line arguments properly
+ 
+/**
+ * Handles command line arguments.
+ */
 static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdline, gpointer user_data) {
     gchar **argv;
     gint argc;
 
     argv = g_application_command_line_get_arguments(cmdline, &argc);
 
-    // Initialize the application if not already done
+     
     if (!app_initialized) {
         initialize_application(GTK_APPLICATION(app));
-        create_new_tab(NULL);  // Create at least one tab
+        create_new_tab(NULL);   
     }
 
-    // Open files from command line
+     
     for (int i = 1; i < argc; i++) {
         if (g_file_test(argv[i], G_FILE_TEST_EXISTS)) {
             create_new_tab(argv[i]);
@@ -940,13 +1042,13 @@ static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdl
             FILE *f = fopen(argv[i], "w");
         }
         if (f) {
-                    fclose(f); // Create it and immediately let go
+                    fclose(f);  
                     g_print("GPad: Created new file '%s'\n", argv[i]);
 
-                    // Now that it physically exists, open the tab
+                     
                     create_new_tab(argv[i]);
                 } else {
-                    // This only happens if the path is invalid or permissions are denied
+                     
                     g_printerr("GPad: Permission denied or invalid path for '%s'\n", argv[i]);
                 }
             }
@@ -960,7 +1062,10 @@ static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdl
     }
 }
 
-// Cleanup function
+ 
+/**
+ * Final resource cleanup before exit.
+ */
 static void cleanup_resources(void) {
 #ifdef HAVE_TREE_SITTER
     if (ts_parser) {
@@ -973,28 +1078,31 @@ static void cleanup_resources(void) {
     current_directory = NULL;
 }
 
-// Main function
+ 
+/**
+ * Application entry point.
+ */
 int main(int argc, char **argv) {
     g_print("Starting GPad Multi-Tab Editor...\n");
 
-    // Create application
+     
     GtkApplication *app = gtk_application_new("org.gtk.gpad.multitab", G_APPLICATION_HANDLES_COMMAND_LINE);
     if (!app) {
         g_error("Failed to create GTK application");
         return 1;
     }
 
-    // Connect signals - FIXED: No longer pass filename to activate
+     
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     g_signal_connect(app, "command-line", G_CALLBACK(handle_command_line), NULL);
 
-    // Setup keyboard shortcuts
+     
     setup_shortcuts(app);
 
-    // Run application
+     
     int status = g_application_run(G_APPLICATION(app), argc, argv)
 
-    // Cleanup
+     
     cleanup_resources();
     g_object_unref(app);
 

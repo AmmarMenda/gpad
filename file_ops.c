@@ -1,6 +1,9 @@
 #include "gpad.h"
 
-// Add file to recent manager
+ 
+/**
+ * Adds a file path to the system's recent files manager.
+ */
 void add_to_recent_files(const char *filename) {
     if (!recent_manager || !filename || !g_path_is_absolute(filename)) return;
 
@@ -11,7 +14,10 @@ void add_to_recent_files(const char *filename) {
     }
 }
 
-// Get language type based on filename
+ 
+/**
+ * Determines the programming language of a file based on its extension.
+ */
 LanguageType get_language_from_filename(const char *filename) {
     if (!filename) return LANG_UNKNOWN;
 
@@ -27,7 +33,10 @@ LanguageType get_language_from_filename(const char *filename) {
     return LANG_UNKNOWN;
 }
 
-// Save tab content to file
+ 
+/**
+ * Writes the content of a tab's text buffer to its associated file.
+ */
 static void save_tab_content(TabInfo *tab_info) {
     if (!tab_info->filename) return;
 
@@ -49,7 +58,10 @@ static void save_tab_content(TabInfo *tab_info) {
     }
 }
 
-// Save as dialog finish callback
+ 
+/**
+ * Callback for the 'Save As' file dialog.
+ */
 static void save_as_finish(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     TabInfo *tab_info = (TabInfo*)user_data;
     GError *error = NULL;
@@ -68,7 +80,10 @@ static void save_as_finish(GObject *source_object, GAsyncResult *res, gpointer u
     }
 }
 
-// Save current tab
+ 
+/**
+ * Saves the current active tab. Prompts for a filename if none is associated.
+ */
 void save_current_tab(void) {
     TabInfo *tab_info = get_current_tab_info();
     if (!tab_info) return;
@@ -83,10 +98,13 @@ void save_current_tab(void) {
     }
 }
 
-// Open file dialog finish callback
-// Open file dialog finish callback
+ 
+ 
+/**
+ * Callback for the 'Open' file dialog.
+ */
 static void open_finish(GObject *source_object, GAsyncResult *res, gpointer user_data) {
-    (void)user_data;  // Suppress unused parameter warning
+    (void)user_data;   
 
     GError *error = NULL;
     GFile *file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(source_object), res, &error);
@@ -101,7 +119,10 @@ static void open_finish(GObject *source_object, GAsyncResult *res, gpointer user
         g_error_free(error);
     }
 }
-// Open file dialog
+ 
+/**
+ * Opens a file selection dialog to open a file in a new tab.
+ */
 void open_file_dialog(void) {
     GtkFileDialog *dialog = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dialog, "Open File");

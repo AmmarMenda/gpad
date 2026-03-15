@@ -2,14 +2,17 @@
 
 #ifdef HAVE_TREE_SITTER
 
-// Recursive function to traverse the syntax tree and apply tags
+ 
+/**
+ * Traverses the tree-sitter AST and applies GtkTextTags to the buffer for highlighting.
+ */
 static void apply_tags_recursive(TSNode node, GtkTextBuffer *buffer, const char *source_code, LanguageType lang) {
     if (ts_node_is_null(node)) return;
 
     const char *type = ts_node_type(node);
     const char *tag_name = NULL;
 
-    // Language-specific syntax highlighting
+     
     if (lang == LANG_C) {
         if (strcmp(type, "comment") == 0) tag_name = "comment";
         else if (strcmp(type, "string_literal") == 0 || strcmp(type, "char_literal") == 0) tag_name = "string";
@@ -55,17 +58,20 @@ static void apply_tags_recursive(TSNode node, GtkTextBuffer *buffer, const char 
         gtk_text_buffer_apply_tag_by_name(buffer, tag_name, &start_iter, &end_iter);
     }
 
-    // Recursively process children
+     
     for (uint32_t i = 0; i < ts_node_child_count(node); ++i) {
         apply_tags_recursive(ts_node_child(node, i), buffer, source_code, lang);
     }
 }
 
-// Main function to trigger highlighting
+ 
+/**
+ * Synchronously parses the buffer and applies syntax highlighting.
+ */
 void highlight_buffer_sync(GtkTextBuffer *buffer, TSTreePtr *ts_tree, LanguageType lang) {
     if (lang == LANG_UNKNOWN || !ts_parser) return;
 
-    TSTree **actual_tree = (TSTree**)ts_tree;  // Cast back to TSTree**
+    TSTree **actual_tree = (TSTree**)ts_tree;   
 
     GtkTextIter start, end;
     gtk_text_buffer_get_bounds(buffer, &start, &end);
@@ -74,10 +80,10 @@ void highlight_buffer_sync(GtkTextBuffer *buffer, TSTreePtr *ts_tree, LanguageTy
 
     char *text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
-    // Remove existing tags
+     
     gtk_text_buffer_remove_all_tags(buffer, &start, &end);
 
-    // Set language for parser
+     
     TSLanguage *ts_lang = NULL;
     if (lang == LANG_C) ts_lang = tree_sitter_c();
     else if (lang == LANG_PYTHON) ts_lang = tree_sitter_python();
@@ -98,14 +104,20 @@ void highlight_buffer_sync(GtkTextBuffer *buffer, TSTreePtr *ts_tree, LanguageTy
     g_free(text);
 }
 
-// Timeout callback for debounced highlighting
+ 
+/**
+ * Timer callback to trigger highlighting after a short delay since the last edit.
+ */
 gboolean highlight_timeout_callback(gpointer user_data) {
     TabInfo *tab_info = (TabInfo*)user_data;
     highlight_buffer_sync(tab_info->buffer, &tab_info->ts_tree, tab_info->lang_type);
     return G_SOURCE_REMOVE;
 }
 
-// Initialize tree-sitter parser
+ 
+/**
+ * Initializes the tree-sitter parser.
+ */
 void init_tree_sitter(void) {
     ts_parser = ts_parser_new();
     if (!ts_parser) {
@@ -113,7 +125,10 @@ void init_tree_sitter(void) {
     }
 }
 
-// Cleanup tree-sitter resources
+ 
+/**
+ * Destroys the tree-sitter parser and frees associated memory.
+ */
 void cleanup_tree_sitter(void) {
     if (ts_parser) {
         ts_parser_delete(ts_parser);
@@ -122,27 +137,27 @@ void cleanup_tree_sitter(void) {
 }
 
 #else
-// Stub implementations when tree-sitter is not available
+ 
 
 void highlight_buffer_sync(GtkTextBuffer *buffer, TSTreePtr *ts_tree, LanguageType lang) {
-    // Do nothing when tree-sitter is not available
+     
     (void)buffer;
     (void)ts_tree;
     (void)lang;
 }
 
 gboolean highlight_timeout_callback(gpointer user_data) {
-    // Do nothing when tree-sitter is not available
+     
     (void)user_data;
     return G_SOURCE_REMOVE;
 }
 
 void init_tree_sitter(void) {
-    // Do nothing when tree-sitter is not available
+     
 }
 
 void cleanup_tree_sitter(void) {
-    // Do nothing when tree-sitter is not available
+     
 }
 
-#endif // HAVE_TREE_SITTER
+#endif  

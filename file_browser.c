@@ -2,17 +2,17 @@
 #include <glib/gstdio.h>
 #include <pango/pango.h>
 
-/* File tree columns */
+ 
 
 
-/* Globals (defined here; 'extern' elsewhere) */
+ 
 GtkTreeView  *file_tree_view  = NULL;
 GtkTreeStore *file_tree_store = NULL;
 
-/* Recursion control for subdirectories */
+ 
 #define MAX_RECURSE_DEPTH 2
 
-/* Internal helpers */
+ 
 static void setup_columns(GtkTreeView *tv);
 static void apply_compact_renderers(GtkTreeViewColumn *col, GtkCellRenderer *text, GtkCellRenderer *icon);
 static gboolean path_is_dir(const char *full);
@@ -20,7 +20,10 @@ static void populate_dir_recursive(GtkTreeStore *store, GtkTreeIter *parent, con
 static void rebuild_for_directory(const char *dir_path);
 static void on_row_activated(GtkTreeView *tv, GtkTreePath *tpath, GtkTreeViewColumn *col, gpointer user_data);
 
-/* Renderers for compact sidebar look */
+ 
+/**
+ * Configures cell renderers for a compact display in the file tree.
+ */
 static void apply_compact_renderers(GtkTreeViewColumn *col, GtkCellRenderer *text, GtkCellRenderer *icon) {
     g_object_set(text, "xpad", 2, "ypad", 0, "ellipsize", PANGO_ELLIPSIZE_MIDDLE, NULL);
     PangoFontDescription *fd = pango_font_description_from_string("10pt");
@@ -30,7 +33,10 @@ static void apply_compact_renderers(GtkTreeViewColumn *col, GtkCellRenderer *tex
     g_object_set(icon, "xpad", 1, "ypad", 0, "icon-size", GTK_ICON_SIZE_NORMAL, NULL);
 }
 
-/* Highlight (background color) handler for cell renderer */
+ 
+/**
+ * Data function for cell highlighting based on the current active file.
+ */
 static void highlight_cell_data_func(GtkTreeViewColumn *col, GtkCellRenderer *renderer,
                                      GtkTreeModel *model, GtkTreeIter *iter, gpointer user_data) {
     gboolean highlight = FALSE;
@@ -41,7 +47,10 @@ static void highlight_cell_data_func(GtkTreeViewColumn *col, GtkCellRenderer *re
         g_object_set(renderer, "cell-background-set", FALSE, NULL);
 }
 
-/* Set up columns: one icon+text, highlight using cell data function */
+ 
+/**
+ * Sets up the columns for the file tree view.
+ */
 static void setup_columns(GtkTreeView *tv) {
     GtkTreeViewColumn *col = gtk_tree_view_column_new();
     gtk_tree_view_column_set_title(col, "Name");
@@ -57,17 +66,26 @@ static void setup_columns(GtkTreeView *tv) {
     gtk_tree_view_set_fixed_height_mode(tv, TRUE);
 }
 
-/* Directory tester */
+ 
+/**
+ * Checks if a given path is a directory.
+ */
 static gboolean path_is_dir(const char *full) {
     return full && g_file_test(full, G_FILE_TEST_IS_DIR);
 }
 
+/**
+ * Returns the appropriate icon name for a file or directory.
+ */
 static const char* icon_name_for(const char *full, gboolean is_dir) {
     (void)full;
     return is_dir ? "folder" : "text-x-generic";
 }
 
-/* Recursively populate tree model */
+ 
+/**
+ * Recursively populates the tree store with files and directories.
+ */
 static void populate_dir_recursive(GtkTreeStore *store, GtkTreeIter *parent, const char *path, int depth) {
     if (!path || depth > MAX_RECURSE_DEPTH) return;
     GError *err = NULL;
@@ -94,7 +112,10 @@ static void populate_dir_recursive(GtkTreeStore *store, GtkTreeIter *parent, con
     g_dir_close(dir);
 }
 
-/* Set up root node and populate whole sidebar */
+ 
+/**
+ * Rebuilds the entire file tree for a specific directory.
+ */
 static void rebuild_for_directory(const char *dir_path) {
     if (!file_tree_store || !dir_path) return;
     gtk_tree_store_clear(file_tree_store);
@@ -112,7 +133,10 @@ static void rebuild_for_directory(const char *dir_path) {
     populate_dir_recursive(file_tree_store, &root, dir_path, 1);
 }
 
-/* Row activation handler: expand/collapse or open file */
+ 
+/**
+ * Callback for when a row in the file tree is activated (double-clicked or Enter).
+ */
 static void on_row_activated(GtkTreeView *tv, GtkTreePath *tpath, GtkTreeViewColumn *col, gpointer user_data) {
     GtkTreeModel *model = gtk_tree_view_get_model(tv);
     GtkTreeIter it;
@@ -127,12 +151,15 @@ static void on_row_activated(GtkTreeView *tv, GtkTreePath *tpath, GtkTreeViewCol
         else
             gtk_tree_view_expand_row(tv, tpath, FALSE);
     } else {
-        create_new_tab_from_sidebar(path); // open file
+        create_new_tab_from_sidebar(path);  
     }
     g_free(path);
 }
 
-/* Public API: create the file tree sidebar widget */
+ 
+/**
+ * Creates the file tree view widget and its container.
+ */
 GtkWidget* create_file_tree_view(void) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_widget_set_margin_start(box, 6);
@@ -143,11 +170,11 @@ GtkWidget* create_file_tree_view(void) {
     gtk_widget_add_css_class(hdr, "heading");
     gtk_box_append(GTK_BOX(box), hdr);
     file_tree_store = gtk_tree_store_new(N_COLUMNS,
-        G_TYPE_STRING,   /* icon-name */
-        G_TYPE_STRING,   /* display name */
-        G_TYPE_STRING,   /* full path */
-        G_TYPE_BOOLEAN,  /* is_dir */
-        G_TYPE_BOOLEAN   /* highlight */
+        G_TYPE_STRING,    
+        G_TYPE_STRING,    
+        G_TYPE_STRING,    
+        G_TYPE_BOOLEAN,   
+        G_TYPE_BOOLEAN    
     );
     GtkWidget *scroller = gtk_scrolled_window_new();
     gtk_widget_set_vexpand(scroller, TRUE);
@@ -166,13 +193,19 @@ GtkWidget* create_file_tree_view(void) {
     return box;
 }
 
-/* External API: refresh sidebar to show directory contents */
+ 
+/**
+ * Refreshes the file tree to show the contents of a given directory.
+ */
 void refresh_file_tree(const char *directory) {
     const char *dir = (directory && *directory) ? directory : g_get_home_dir();
     rebuild_for_directory(dir);
 }
 
-/* External API: Show sidebar for current tab's directory */
+ 
+/**
+ * Refreshes the file tree based on the current active tab's directory or the last known directory.
+ */
 void refresh_file_tree_current(void) {
     TabInfo *tab = get_current_tab_info();
     if (tab && tab->filename && *tab->filename) {
@@ -185,12 +218,18 @@ void refresh_file_tree_current(void) {
     rebuild_for_directory(dir);
 }
 
-/* Populate for custom root (compat) */
+ 
+/**
+ * Helper to start recursive population of the file tree.
+ */
 void populate_file_tree(GtkTreeStore *store, GtkTreeIter *parent, const char *path) {
     populate_dir_recursive(store, parent, path, 1);
 }
 
-/* Highlight logic—set highlight flag for current file in tree */
+ 
+/**
+ * Clears the highlight status from all items in the tree.
+ */
 static void clear_current_file_highlight(GtkTreeModel *model, GtkTreeIter *iter) {
     GtkTreeIter child;
     gboolean has_child = gtk_tree_model_iter_children(model, &child, iter);
@@ -201,6 +240,9 @@ static void clear_current_file_highlight(GtkTreeModel *model, GtkTreeIter *iter)
     }
 }
 
+/**
+ * Recursively finds a file in the tree and sets its highlight status.
+ */
 static gboolean find_and_highlight_file(GtkTreeModel *model, GtkTreeIter *iter, const char *filepath) {
     GtkTreeIter child;
     gboolean has_child = gtk_tree_model_iter_children(model, &child, iter);
@@ -220,6 +262,9 @@ static gboolean find_and_highlight_file(GtkTreeModel *model, GtkTreeIter *iter, 
     return FALSE;
 }
 
+/**
+ * Highlights the entry in the file tree corresponding to the given file path.
+ */
 void highlight_current_file(const char *filepath) {
     if (!file_tree_view || !file_tree_store) return;
     GtkTreeIter iter;

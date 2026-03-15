@@ -1,22 +1,28 @@
 #include "gpad.h"
 
-// Recent file item click handler
-// Recent file item click handler
+ 
+ 
+/**
+ * Signal handler for when a recent file row is activated.
+ */
 static void on_recent_file_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data) {
-    (void)box;       // Suppress unused parameter warning
-    (void)user_data; // Suppress unused parameter warning
+    (void)box;        
+    (void)user_data;  
 
     const char *filename = (const char *)g_object_get_data(G_OBJECT(row), "filename");
     if (filename) {
-        // Use the new function that keeps sidebar open
+         
         create_new_tab_from_sidebar(filename);
     }
 }
-// Populate recent files list
+ 
+/**
+ * Fills the recent files list box with the most recently used documents.
+ */
 void populate_recent_files(void) {
     if (!recent_list_box || !recent_manager) return;
 
-    // Clear existing items
+     
     GtkWidget *child;
     while ((child = gtk_widget_get_first_child(GTK_WIDGET(recent_list_box))) != NULL) {
         gtk_list_box_remove(recent_list_box, child);
@@ -58,7 +64,10 @@ void populate_recent_files(void) {
     }
 }
 
-// Create recent files panel
+ 
+/**
+ * Creates and initializes the recent files panel widget.
+ */
 GtkWidget* create_recent_files_panel(void) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     gtk_widget_set_margin_start(box, 10);
@@ -92,7 +101,10 @@ GtkWidget* create_recent_files_panel(void) {
     return box;
 }
 
-// Show file browser panel
+ 
+/**
+ * Switches the sidebar to display the file browser panel.
+ */
 void show_file_browser_panel(void) {
     if (!panel_container || !side_panel) return;
 
@@ -102,7 +114,10 @@ void show_file_browser_panel(void) {
     g_print("Showing file browser panel\n");
 }
 
-// Show recent files panel
+ 
+/**
+ * Switches the sidebar to display the recent files panel.
+ */
 void show_recent_files_panel(void) {
     if (!panel_container || !recent_panel) return;
 
@@ -113,7 +128,10 @@ void show_recent_files_panel(void) {
     g_print("Showing recent files panel\n");
 }
 
-// Hide all side panels
+ 
+/**
+ * Hides both the file browser and recent files panels in the sidebar.
+ */
 void hide_panels(void) {
     if (panel_container) {
         gtk_widget_set_visible(panel_container, FALSE);

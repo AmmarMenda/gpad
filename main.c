@@ -1,7 +1,7 @@
 #include "gpad.h"
 #include "search.h"
 
-// Global variable definitions
+
 GtkWidget *global_window = NULL;
 GtkNotebook *global_notebook = NULL;
 GtkWidget *editor_stack = NULL;
@@ -20,15 +20,18 @@ static gboolean is_dark_mode = FALSE;
 TSParser *ts_parser = NULL;
 #endif
 
-// Forward declarations for static functions used only in this file
+
 static void on_page_removed(GtkNotebook *notebook, GtkWidget *child, guint page_num, gpointer user_data);
 static gboolean update_after_tab_close(gpointer user_data);
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
 
-// Show welcome screen
 
 
-// Show notebook (tabs area)
+
+
+/**
+ * Switches the editor stack to show the notebook (tabs area).
+ */
 void show_notebook(void) {
     if (editor_stack && global_notebook) {
         gtk_stack_set_visible_child(GTK_STACK(editor_stack), GTK_WIDGET(global_notebook));
@@ -36,7 +39,11 @@ void show_notebook(void) {
     }
 }
 
-// Handle page removed from notebook - UPDATE SIDEBAR AND CHECK FOR WELCOME
+
+/**
+ * Signal handler called when a page is removed from the notebook.
+ * It schedules a deferred update to check if the welcome screen should be shown.
+ */
 static void on_page_removed(GtkNotebook *notebook, GtkWidget *child, guint page_num, gpointer user_data) {
     (void)child;
     (void)page_num;
@@ -44,11 +51,15 @@ static void on_page_removed(GtkNotebook *notebook, GtkWidget *child, guint page_
 
     g_print("Page removed, checking remaining tabs...\n");
 
-    // Small delay to let GTK finish the removal process
+
     g_idle_add((GSourceFunc)update_after_tab_close, notebook);
 }
 
-// Deferred update after tab close - runs after GTK finishes page removal
+
+/**
+ * Deferred callback to update the UI state after a tab has been closed.
+ * Handles showing the welcome screen if no tabs are left or updating the sidebar.
+ */
 static gboolean update_after_tab_close(gpointer user_data) {
     GtkNotebook *notebook = GTK_NOTEBOOK(user_data);
 
@@ -56,7 +67,7 @@ static gboolean update_after_tab_close(gpointer user_data) {
     g_print("Number of pages remaining: %d\n", num_pages);
 
     if (num_pages == 0) {
-        // No tabs left, show welcome screen and hide sidebar
+
         g_print("No tabs left - showing welcome screen\n");
         create_new_tab(NULL);
         hide_panels();
@@ -65,7 +76,7 @@ static gboolean update_after_tab_close(gpointer user_data) {
             gtk_label_set_text(GTK_LABEL(footer_label), "");
         }
     } else {
-        // Get current active tab and update sidebar to its directory
+
         gint current_page = gtk_notebook_get_current_page(notebook);
         g_print("Current page after close: %d\n", current_page);
 
@@ -76,13 +87,13 @@ static gboolean update_after_tab_close(gpointer user_data) {
 
                 if (info && info->filename) {
                     g_print("Updating sidebar to directory of: %s\n", info->filename);
-                    // Update sidebar to show directory of current file
+
                     if (is_sidebar_visible() && gtk_widget_get_visible(side_panel)) {
                         refresh_file_tree_current();
                     }
                 } else {
                     g_print("Current tab has no filename, using home directory\n");
-                    // Current tab has no file (new document), show home directory
+
                     if (is_sidebar_visible() && gtk_widget_get_visible(side_panel)) {
                         const char *home_dir = g_get_home_dir();
                         refresh_file_tree(home_dir);
@@ -95,13 +106,16 @@ static gboolean update_after_tab_close(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-// Key event handler for the main window - ENSURE SHORTCUTS ALWAYS WORK
+
+/**
+ * Global key event handler for the main window to handle keyboard shortcuts.
+ */
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data) {
     (void)controller;
     (void)keycode;
     (void)user_data;
 
-    // Handle shortcuts manually if needed - this ensures they work regardless of focus
+
     if (state & GDK_CONTROL_MASK) {
         switch (keyval) {
             case GDK_KEY_n:
@@ -134,14 +148,14 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
                 return TRUE;
             case GDK_KEY_b:
                 g_print("Ctrl+B pressed - toggle file browser\n");
-                // Create a fake action to trigger browser toggle
+
                 GSimpleAction *fake_action = g_simple_action_new("browser", NULL);
                 action_callback(fake_action, NULL, NULL);
                 g_object_unref(fake_action);
                 return TRUE;
             case GDK_KEY_r:
                 g_print("Ctrl+R pressed - toggle recent files\n");
-                // Create a fake action to trigger recent toggle
+
                 GSimpleAction *fake_action2 = g_simple_action_new("recent", NULL);
                 action_callback(fake_action2, NULL, NULL);
                 g_object_unref(fake_action2);
@@ -149,14 +163,17 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
         }
     }
 
-    return FALSE; // Let other handlers process the event
+    return FALSE;
 }
 
-// Theme loading function
+
+/**
+ * Loads and applies a CSS theme to the application.
+ */
 static void load_theme(const char *theme_path) {
     GdkDisplay *display = gdk_display_get_default();
 
-    // Remove old provider if exists
+
     if (current_css_provider) {
         gtk_style_context_remove_provider_for_display(
             display,
@@ -168,7 +185,7 @@ static void load_theme(const char *theme_path) {
 
     if (!theme_path) return;
 
-    // Load new theme
+
     current_css_provider = gtk_css_provider_new();
     gtk_css_provider_load_from_path(current_css_provider, theme_path);
 
@@ -179,73 +196,79 @@ static void load_theme(const char *theme_path) {
     );
 }
 
-// Theme toggle callback
+
+/**
+ * Callback for the theme toggle button to switch between light and dark modes.
+ */
 static void on_theme_toggle_clicked(GtkButton *button, gpointer user_data) {
     (void)user_data;
     is_dark_mode = !is_dark_mode;
 
     if (is_dark_mode) {
         load_theme("cyberpunk-theme.css");
-        // Button shows Sun icon (switch to light)
+
         gtk_button_set_icon_name(button, "weather-clear-symbolic");
     } else {
         load_theme("old-macos-theme.css");
-        // Button shows Moon icon (switch to dark)
+
         gtk_button_set_icon_name(button, "weather-clear-night-symbolic");
     }
 }
 
-// Initialize the main application window and components
+
+/**
+ * Initializes the main application window, UI components, and layouts.
+ */
 void initialize_application(GtkApplication *app) {
     if (app_initialized) return;
 
     g_print("Initializing GPad editor...\n");
 
-    // Create main window
+
     GtkWidget *window = gtk_application_window_new(app);
     global_window = window;
     gtk_window_set_title(GTK_WINDOW(window), "GPad - Multi-Tab Editor");
     gtk_window_set_default_size(GTK_WINDOW(window), 1200, 800);
 
-    // IMPORTANT: Add key event controller to main window for global shortcuts
+
     GtkEventController *key_controller = gtk_event_controller_key_new();
     gtk_widget_add_controller(window, key_controller);
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), NULL);
 
-    // Initialize recent manager
+
     recent_manager = gtk_recent_manager_get_default();
 
-    // Create vertical box to hold main content and footer
+
     GtkWidget *main_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_window_set_child(GTK_WINDOW(window), main_vbox);
 
-    // Create main layout with proper sizing
+
     GtkWidget *main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_append(GTK_BOX(main_vbox), main_paned);
     gtk_widget_set_hexpand(main_paned, TRUE);
     gtk_widget_set_vexpand(main_paned, TRUE);
 
-    // Create side panel container with minimum width
+
     panel_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_size_request(panel_container, 250, -1);
     gtk_paned_set_start_child(GTK_PANED(main_paned), panel_container);
     gtk_paned_set_shrink_start_child(GTK_PANED(main_paned), FALSE);
     gtk_paned_set_resize_start_child(GTK_PANED(main_paned), FALSE);
 
-    // Create side panels
+
     side_panel = create_file_tree_view();
     gtk_box_append(GTK_BOX(panel_container), side_panel);
 
     recent_panel = create_recent_files_panel();
     gtk_box_append(GTK_BOX(panel_container), recent_panel);
 
-    // Create editor area
+
     GtkWidget *editor_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_paned_set_end_child(GTK_PANED(main_paned), editor_box);
     gtk_paned_set_shrink_end_child(GTK_PANED(main_paned), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(main_paned), TRUE);
 
-    // Create stack to switch between welcome screen and notebook
+
     editor_stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(editor_stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(GTK_STACK(editor_stack), 200);
@@ -253,48 +276,48 @@ void initialize_application(GtkApplication *app) {
     gtk_widget_set_vexpand(editor_stack, TRUE);
     gtk_box_append(GTK_BOX(editor_box), editor_stack);
 
-    // Create welcome screen
 
-    // Create notebook for tabs
+
+
     global_notebook = GTK_NOTEBOOK(gtk_notebook_new());
     gtk_notebook_set_scrollable(global_notebook, TRUE);
     gtk_widget_set_hexpand(GTK_WIDGET(global_notebook), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(global_notebook), TRUE);
     gtk_stack_add_named(GTK_STACK(editor_stack), GTK_WIDGET(global_notebook), "notebook");
 
-    // Connect notebook signals
+
     g_signal_connect(global_notebook, "switch-page", G_CALLBACK(on_tab_switched), NULL);
     g_signal_connect(global_notebook, "page-removed", G_CALLBACK(on_page_removed), NULL);
 
-    // Set initial paned position (300px for sidebar)
+
     gtk_paned_set_position(GTK_PANED(main_paned), 300);
 
-    // Initially hide panels and show welcome screen
+
     gtk_widget_set_visible(panel_container, FALSE);
 
 #ifdef HAVE_TREE_SITTER
     init_tree_sitter();
 #endif
 
-    // Create search bar (hidden by default)
+
     GtkWidget *search_bar = init_search_ui();
     gtk_box_append(GTK_BOX(main_vbox), search_bar);
 
-    // Create footer
+
     GtkWidget *footer_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_size_request(footer_box, -1, 32); // Slightly taller for dropdown
-    gtk_widget_add_css_class(footer_box, "footer"); // For potential styling
+    gtk_widget_set_size_request(footer_box, -1, 32);
+    gtk_widget_add_css_class(footer_box, "footer");
     gtk_box_append(GTK_BOX(main_vbox), footer_box);
 
     footer_label = gtk_label_new("");
     gtk_widget_set_margin_start(footer_label, 10);
     gtk_widget_set_margin_end(footer_label, 10);
-    gtk_widget_set_hexpand(footer_label, TRUE); // Push dropdown to right
+    gtk_widget_set_hexpand(footer_label, TRUE);
     gtk_widget_set_halign(footer_label, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(footer_box), footer_label);
 
-    // Theme toggle button
-    // Start in Light mode -> Show Moon icon (to switch to dark)
+
+
     GtkWidget *theme_btn = gtk_button_new_from_icon_name("weather-clear-night-symbolic");
     gtk_button_set_has_frame(GTK_BUTTON(theme_btn), FALSE);
     gtk_widget_set_tooltip_text(theme_btn, "Toggle Dark Mode");
@@ -304,30 +327,36 @@ void initialize_application(GtkApplication *app) {
     g_signal_connect(theme_btn, "clicked", G_CALLBACK(on_theme_toggle_clicked), NULL);
     gtk_box_append(GTK_BOX(footer_box), theme_btn);
 
-    // Apply default theme (Light)
+
     load_theme("old-macos-theme.css");
     is_dark_mode = FALSE;
 
-    // Mark app as initialized
+
     app_initialized = TRUE;
 
-    // Show window
+
     gtk_window_present(GTK_WINDOW(window));
     g_print("GPad editor initialized successfully.\n");
 }
-// Main application activation callback
+
+/**
+ * Callback for the application 'activate' signal.
+ */
 static void activate(GtkApplication *app, gpointer user_data) {
     initialize_application(app);
 
-    // Don't create initial tab - show welcome screen instead
+
     const char *filename = (const char *)user_data;
     if (filename && g_file_test(filename, G_FILE_TEST_EXISTS)) {
         create_new_tab(filename);
     }
-    // If no filename, welcome screen is already showing
+
 }
 
-// Handle command line arguments
+
+/**
+ * Handles command line arguments to open files when the application is launched.
+ */
 static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdline, gpointer user_data) {
     (void)user_data;
 
@@ -344,15 +373,9 @@ static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdl
             opened_file = TRUE;
             g_print("Opening file from command line: %s\n", argv[i]);
         } else {
-            FILE *f = fopen(argv[i], "w");
-            if (f) {
-                fclose(f);
-                g_print("GPad: Created and opening new file '%s'\n", argv[i]);
-                create_new_tab(argv[i]);
-                opened_file = TRUE;
-            } else {
-                g_printerr("GPad: Permission denied or invalid path for '%s'\n", argv[i]);
-            }
+            create_new_tab(argv[i]);
+            opened_file = TRUE;
+            g_print("GPad: Target path set to '%s'\n", argv[i]);
         }
     }
     if (!opened_file) {
@@ -364,7 +387,10 @@ static void handle_command_line(GApplication *app, GApplicationCommandLine *cmdl
     }
 }
 
-// Cleanup function
+
+/**
+ * Cleans up application resources before exit.
+ */
 void cleanup_resources(void) {
 #ifdef HAVE_TREE_SITTER
     cleanup_tree_sitter();
@@ -373,7 +399,10 @@ void cleanup_resources(void) {
     current_directory = NULL;
 }
 
-// Main function
+
+/**
+ * Entry point of the application.
+ */
 int main(int argc, char **argv) {
     g_print("Starting GPad Multi-Tab Editor...\n");
 
